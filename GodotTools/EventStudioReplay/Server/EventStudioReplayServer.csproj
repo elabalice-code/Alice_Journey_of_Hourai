@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>EventStudioReplayServer</AssemblyName>
+    <RootNamespace>EventStudioReplayServer</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <OutputPath>..\..\..\GodotTools-Build\EventStudioReplayServer\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\ReplayProtocol.cs" Link="Shared\ReplayProtocol.cs" />
+  </ItemGroup>
+</Project>

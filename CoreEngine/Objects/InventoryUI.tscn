@@ -1,0 +1,115 @@
+[gd_scene load_steps=2 format=3 uid="uid://c2p6i0ukx3m2o"]
+
+[ext_resource type="Script" path="res://CoreEngine/Scripts/UI/InventoryUI.gd" id="1_3v0g3"]
+
+[node name="InventoryUI" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+visible = false
+script = ExtResource("1_3v0g3")
+
+[node name="Dim" type="ColorRect" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.6)
+
+[node name="Window" type="PanelContainer" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -360.0
+offset_top = -240.0
+offset_right = 360.0
+offset_bottom = 240.0
+
+[node name="RootVBox" type="VBoxContainer" parent="Window"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 712.0
+offset_bottom = 472.0
+
+[node name="Header" type="HBoxContainer" parent="Window/RootVBox"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Window/RootVBox/Header"]
+layout_mode = 2
+text = "背包"
+
+[node name="TabEquipment" type="Button" parent="Window/RootVBox/Header"]
+layout_mode = 2
+text = "装备"
+
+[node name="TabRunes" type="Button" parent="Window/RootVBox/Header"]
+layout_mode = 2
+text = "符文"
+
+[node name="Spacer" type="Control" parent="Window/RootVBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Close" type="Button" parent="Window/RootVBox/Header"]
+layout_mode = 2
+text = "关闭"
+
+[node name="Content" type="HBoxContainer" parent="Window/RootVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="BagVBox" type="VBoxContainer" parent="Window/RootVBox/Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BagLabel" type="Label" parent="Window/RootVBox/Content/BagVBox"]
+layout_mode = 2
+text = "背包 8×8"
+
+[node name="BagGrid" type="GridContainer" parent="Window/RootVBox/Content/BagVBox"]
+layout_mode = 2
+columns = 8
+
+[node name="RightVBox" type="VBoxContainer" parent="Window/RootVBox/Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="EquipmentPage" type="VBoxContainer" parent="Window/RootVBox/Content/RightVBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="EquipLabel" type="Label" parent="Window/RootVBox/Content/RightVBox/EquipmentPage"]
+layout_mode = 2
+text = "装备栏"
+
+[node name="EquipGrid" type="GridContainer" parent="Window/RootVBox/Content/RightVBox/EquipmentPage"]
+layout_mode = 2
+columns = 2
+
+[node name="RunePage" type="VBoxContainer" parent="Window/RootVBox/Content/RightVBox"]
+visible = false
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RuneLabel" type="Label" parent="Window/RootVBox/Content/RightVBox/RunePage"]
+layout_mode = 2
+text = "符文栏（最多6个，锁定3个）"
+
+[node name="RuneGrid" type="GridContainer" parent="Window/RootVBox/Content/RightVBox/RunePage"]
+layout_mode = 2
+columns = 3
+
+[node name="Footer" type="Label" parent="Window/RootVBox"]
+layout_mode = 2
+text = "左键：选择/放置/卸下"
+
+[node name="SelectedLabel" type="Label" parent="Window/RootVBox"]
+layout_mode = 2
+text = "已选择：无"
+

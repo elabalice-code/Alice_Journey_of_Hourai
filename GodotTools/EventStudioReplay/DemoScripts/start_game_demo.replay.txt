@@ -1,0 +1,11 @@
+# 从“开始游戏”构建事件流
+ping
+click main.btnNewProject
+set-text dialog.txtValue "StartGameFlow"
+click dialog.btnConfirm
+click main.btnStartEvent
+set-text dialog.txtValue "evt_game_start"
+click dialog.btnConfirm
+click main.btnAddFlow
+click main.btnValidateExport
+list-controls

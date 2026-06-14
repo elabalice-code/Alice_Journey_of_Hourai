@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "startEventId": "evt_prologue_start",
+  "nodes": [
+    {
+      "id": "evt_prologue_start",
+      "domain": "Story",
+      "scope": {
+        "map": "",
+        "dialogue": "",
+        "combat": ""
+      },
+      "triggerCount": 1,
+      "nextEvents": [
+        "evt_after_dialogue"
+      ]
+    },
+    {
+      "id": "evt_after_dialogue",
+      "domain": "Dialogue",
+      "scope": {
+        "map": "",
+        "dialogue": "dlg_prologue_0001",
+        "combat": ""
+      },
+      "triggerCount": 1,
+      "nextEvents": []
+    }
+  ]
+}

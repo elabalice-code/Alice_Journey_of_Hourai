@@ -1,0 +1,53 @@
+# LANGUAGE translation for CoreEngine
+msgid ""
+msgstr ""
+"Project-Id-Version: CoreEngine\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "MENU_CONTINUE"
+msgstr "Continue"
+
+msgid "MENU_START"
+msgstr "Start Game"
+
+msgid "MENU_SETTINGS"
+msgstr "Settings"
+
+msgid "MENU_QUIT"
+msgstr "Quit"
+
+msgid "MENU_WINDOW"
+msgstr "Window"
+
+msgid "MENU_FULLSCREEN"
+msgstr "Fullscreen"
+
+msgid "MENU_BACK"
+msgstr "Back"
+
+msgid "MENU_LANGUAGE"
+msgstr "Language"
+
+msgid "LANG_AUTO"
+msgstr "Auto"
+
+msgid "LANG_EN"
+msgstr "English"
+
+msgid "LANG_ZH_CN"
+msgstr "中文"
+
+msgid "LOADING"
+msgstr "Loading..."
+
+msgid "LOADING_CHAPTER"
+msgstr "Loading chapter resources..."
+
+msgid "PROLOGUE_SKIP"
+msgstr "Skip Prologue"
+
+msgid "PROLOGUE_NEXT"
+msgstr "Next"

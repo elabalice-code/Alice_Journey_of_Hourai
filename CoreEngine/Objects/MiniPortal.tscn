@@ -1,0 +1,70 @@
+[gd_scene load_steps=7 format=3 uid="uid://dgbhua1xw0ckx"]
+
+[ext_resource type="Texture2D" uid="uid://cargdawan7gao" path="res://CoreEngine/Sprites/Objects/Portal.png" id="2_d5vpk"]
+
+[sub_resource type="GDScript" id="GDScript_op7ae"]
+script/source = "# A portal object that transports to another room.\nextends Area2D\nconst ActorFramework = preload(\"res://CoreEngine/Scripts/Actor/ActorFramework.gd\")\n@export_file(\"room_link\") var target_map: String\n@export_dir var portal_anim_dir: String = \"\"\n@export var portal_anim_fps: float = 12.0\n\n@onready var _fallback_sprite: Sprite2D = get_node_or_null(^\"VisualRoot/Sprite2D\") as Sprite2D\n@onready var _anim_sprite: AnimatedSprite2D = get_node_or_null(^\"VisualRoot/Visual\") as AnimatedSprite2D\n\nfunc _ready() -> void:\n\t_apply_portal_animation()\n\nfunc _apply_portal_animation() -> void:\n\tif _anim_sprite == null:\n\t\treturn\n\tvar dir := _resolve_portal_anim_dir()\n\tif dir.is_empty():\n\t\tif _fallback_sprite != null:\n\t\t\t_fallback_sprite.visible = true\n\t\t_anim_sprite.visible = false\n\t\treturn\n\tvar frames := _load_textures_from_dir(dir)\n\tif frames.is_empty():\n\t\tif _fallback_sprite != null:\n\t\t\t_fallback_sprite.visible = true\n\t\t_anim_sprite.visible = false\n\t\treturn\n\tvar sf := SpriteFrames.new()\n\tsf.add_animation(&\"idle\")\n\tsf.set_animation_loop(&\"idle\", false)\n\tsf.set_animation_speed(&\"idle\", 1.0)\n\tsf.add_frame(&\"idle\", frames[0])\n\tsf.add_animation(&\"activate\")\n\tsf.set_animation_loop(&\"activate\", false)\n\tsf.set_animation_speed(&\"activate\", maxf(1.0, portal_anim_fps))\n\tfor t in frames:\n\t\tsf.add_frame(&\"activate\", t)\n\t_anim_sprite.sprite_frames = sf\n\t_anim_sprite.visible = true\n\tif _fallback_sprite != null:\n\t\t_fallback_sprite.visible = false\n\t_anim_sprite.animation = &\"idle\"\n\t_anim_sprite.play(&\"idle\")\n\t_anim_sprite.stop()\n\t_anim_sprite.frame = 0\n\nfunc _resolve_portal_anim_dir() -> String:\n\tif not portal_anim_dir.is_empty():\n\t\treturn portal_anim_dir\n\tvar meta_any: Variant = get_meta(&\"portal_anim_dir\", \"\")\n\tvar meta := str(meta_any)\n\tif not meta.is_empty():\n\t\treturn meta\n\treturn \"\"\n\nfunc _load_textures_from_dir(dir_path: String) -> Array[Texture2D]:\n\tvar out: Array[Texture2D] = []\n\tvar dir := DirAccess.open(dir_path)\n\tif dir == null:\n\t\treturn out\n\tdir.list_dir_begin()\n\twhile true:\n\t\tvar name := dir.get_next()\n\t\tif name.is_empty():\n\t\t\tbreak\n\t\tif dir.current_is_dir():\n\t\t\tcontinue\n\t\tvar ext := name.get_extension().to_lower()\n\t\tif ext != \"png\" and ext != \"jpg\" and ext != \"jpeg\" and ext != \"webp\":\n\t\t\tcontinue\n\t\tout.append(load(dir_path.path_join(name)) as Texture2D)\n\tdir.list_dir_end()\n\tout = out.filter(func(t): return t != null)\n\tout.sort_custom(func(a, b): return a.resource_path.naturalnocasecmp_to(b.resource_path) < 0)\n\treturn out\n\nfunc _play_activate_animation_if_any() -> void:\n\tvar anim := _anim_sprite\n\tif anim == null or not anim.visible:\n\t\treturn\n\tif anim.sprite_frames == null:\n\t\treturn\n\tif not anim.sprite_frames.has_animation(&\"activate\"):\n\t\treturn\n\tif anim.sprite_frames.get_frame_count(&\"activate\") <= 1:\n\t\treturn\n\tanim.play(&\"activate\")\n\tawait anim.animation_finished\n\tanim.stop()\n\tanim.frame = anim.sprite_frames.get_frame_count(&\"activate\") - 1\n\nfunc _on_body_entered(body: Node2D) -> void:\n\tif body.is_in_group(&\"player\") and not body.event:\n\t\tbody.event = true\n\t\tawait _play_activate_animation_if_any()\n\t\tvar workbench := WorkbenchService.get_singleton()\n\t\tif workbench == null:\n\t\t\treturn\n\t\tworkbench.send({\n\t\t\ttype = ActorFramework.TYPE_LOAD_ROOM_REQUEST,\n\t\t\ttarget_map = target_map,\n\t\t\tafter = {\n\t\t\t\taction = StringName(\"move_player_to_node\"),\n\t\t\t\tnode = StringName(\"MiniPortal\"),\n\t\t\t\tclear_player_event_after_sec = 0.1\n\t\t\t}\n\t\t})\n"
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_vq33u"]
+radius = 25.0
+
+[sub_resource type="Animation" id="Animation_bkyt7"]
+length = 0.001
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:rotation")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0),
+"transitions": PackedFloat32Array(1),
+"update": 0,
+"values": [0.0]
+}
+
+[sub_resource type="Animation" id="Animation_g3r3d"]
+resource_name = "Rotat"
+length = 2.0
+loop_mode = 1
+tracks/0/type = "value"
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/path = NodePath(".:rotation")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/keys = {
+"times": PackedFloat32Array(0, 2),
+"transitions": PackedFloat32Array(1, 1),
+"update": 0,
+"values": [0.0, 6.28319]
+}
+
+[sub_resource type="AnimationLibrary" id="AnimationLibrary_0plid"]
+_data = {
+&"RESET": SubResource("Animation_bkyt7"),
+&"Rotat": SubResource("Animation_g3r3d")
+}
+
+[node name="MiniPortal" type="Area2D"]
+script = SubResource("GDScript_op7ae")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_vq33u")
+
+[node name="VisualRoot" type="Node2D" parent="."]
+
+[node name="Sprite2D" type="Sprite2D" parent="VisualRoot"]
+scale = Vector2(0.25, 0.25)
+texture = ExtResource("2_d5vpk")
+
+[node name="Visual" type="AnimatedSprite2D" parent="VisualRoot"]
+visible = false
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="VisualRoot"]
+libraries = {
+&"": SubResource("AnimationLibrary_0plid")
+}
+autoplay = "Rotat"
+
+[connection signal="body_entered" from="." to="." method="_on_body_entered"]

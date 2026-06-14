@@ -1,0 +1,58 @@
+[gd_scene load_steps=6 format=4]
+
+[ext_resource type="TileSet" path="res://CoreEngine/Resources/Tileset.tres" id="1_tileset"]
+[ext_resource type="PackedScene" path="res://addons/MetroidvaniaSystem/Nodes/RoomInstance.tscn" id="2_room"]
+[ext_resource type="Texture2D" path="res://CoreEngine/Maps/Resources/AliceForest/00002-891542086-forest,night, full moon,.png" id="bg_00002_891542086_forest_night_full_moon"]
+[ext_resource type="Texture2D" path="res://CoreEngine/Maps/Resources/AliceForest/ForestMap.png" id="fg_forestmap"]
+[ext_resource type="PackedScene" path="res://CoreEngine/Objects/Portal.tscn" id="3_portal"]
+
+[node name="Map" type="Node2D"]
+metadata/collision_mode = "foreground_texture"
+metadata/collision_tile_path = "res://CoreEngine/Maps/Resources/AliceForest/collision_tile.json"
+metadata/collision_fgtex_path = "res://CoreEngine/Maps/Resources/AliceForest/collision_fgtex.json"
+
+
+[node name="ForegroundTextureLayer" type="Node2D" parent="."]
+z_index = -1
+
+[node name="ForegroundTexture" type="Sprite2D" parent="ForegroundTextureLayer"]
+texture = ExtResource("fg_forestmap")
+centered = false
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -100
+
+[node name="BackgroundTexture" type="TextureRect" parent="BackgroundLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+texture = ExtResource("bg_00002_891542086_forest_night_full_moon")
+[node name="TileMap" type="Node2D" parent="."]
+
+[node name="Foreground" type="TileMapLayer" parent="TileMap"]
+use_parent_material = true
+tile_set = ExtResource("1_tileset")
+tile_map_data = PackedByteArray()
+
+[node name="Background" type="TileMapLayer" parent="TileMap"]
+visible = false
+z_index = -1
+use_parent_material = true
+tile_set = ExtResource("1_tileset")
+tile_map_data = PackedByteArray()
+
+[node name="RoomInstance" parent="." instance=ExtResource("2_room")]
+
+[node name="Portal" parent="." instance=ExtResource("3_portal")]
+position = Vector2(13, 117)
+target_map = "res://CoreEngine/Maps/UpperElevatorRoom.tscn"
+target_area = &"story_vertical"
+target_entry_node = &"Portal_1"
+
+[node name="Portal_1" parent="." instance=ExtResource("3_portal")]
+position = Vector2(0, 0)
+target_map = ""
+target_area = &""

@@ -1,0 +1,78 @@
+[gd_scene load_steps=7 format=4 uid="uid://dsk4s7k0ap1kq"]
+
+[ext_resource type="TileSet" uid="uid://bwpcg2opya34n" path="res://CoreEngine/Resources/Tileset.tres" id="1_tileset"]
+[ext_resource type="Script" uid="uid://t3mpl4t3r00mmap" path="res://CoreEngine/Scripts/World/TemplateRoomMap.gd" id="2_script"]
+[ext_resource type="PackedScene" uid="uid://bsg0351mx3b4u" path="res://addons/MetroidvaniaSystem/Nodes/RoomInstance.tscn" id="3_room_instance"]
+[ext_resource type="PackedScene" uid="uid://cwrf84g5mlucd" path="res://CoreEngine/Objects/Portal.tscn" id="4_portal"]
+[ext_resource type="Script" uid="uid://0u1nlyd1ld6o" path="res://CoreEngine/Scripts/World/SavePoint.gd" id="5_save_point_script"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_save"]
+radius = 32.0
+
+[node name="Map" type="Node2D"]
+script = ExtResource("2_script")
+template = null
+background_texture = null
+
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -100
+
+[node name="BackgroundTexture" type="TextureRect" parent="BackgroundLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="FallbackColor" type="ColorRect" parent="BackgroundLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="TileMap" type="Node2D" parent="."]
+unique_name_in_owner = true
+
+[node name="Foreground" type="TileMapLayer" parent="TileMap"]
+use_parent_material = true
+tile_set = ExtResource("1_tileset")
+
+[node name="RoomInstance" parent="." instance=ExtResource("3_room_instance")]
+
+[node name="SavePoint" type="Area2D" parent="."]
+position = Vector2(432, 288)
+script = ExtResource("5_save_point_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="SavePoint"]
+shape = SubResource("CircleShape2D_save")
+
+[node name="Label" type="Label" parent="SavePoint"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -29.0
+offset_top = -25.0
+offset_right = 29.0
+offset_bottom = 25.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_font_sizes/font_size = 40
+text = "S"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="ExitLeft" parent="." instance=ExtResource("4_portal")]
+modulate = Color(0.462745, 0.721569, 1, 1)
+position = Vector2(96, 288)
+target_map = "uid://cv55nv1c2sbiq"
+target_area = &"story_vertical"
+
+[node name="ExitRight" parent="." instance=ExtResource("4_portal")]
+modulate = Color(0.870588, 0.117647, 0.466667, 1)
+position = Vector2(768, 288)
+target_map = "uid://dafqk3u71on41"
+target_area = &"story_overworld"

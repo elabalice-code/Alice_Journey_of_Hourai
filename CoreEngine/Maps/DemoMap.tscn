@@ -1,0 +1,59 @@
+[gd_scene load_steps=6 format=4]
+
+[ext_resource type="TileSet" path="res://CoreEngine/Resources/Tileset.tres" id="1_tileset"]
+[ext_resource type="PackedScene" path="res://addons/MetroidvaniaSystem/Nodes/RoomInstance.tscn" id="2_room"]
+[ext_resource type="Texture2D" path="res://CoreEngine/Maps/Resources/DemoMap/DemoMapBackGround.png" id="bg_demomapbackground"]
+[ext_resource type="Texture2D" path="res://CoreEngine/Maps/Resources/DemoMap/DemoMap.png" id="fg_demomap"]
+[ext_resource type="PackedScene" path="res://CoreEngine/Objects/Portal.tscn" id="3_portal"]
+[ext_resource type="Texture2D" path="res://CoreEngine/Maps/Resources/DemoMap/DemoMapBackground_Star.png" id="bg_demomapbackground_star"]
+
+[node name="Map" type="Node2D"]
+metadata/collision_mode = "foreground_texture"
+metadata/collision_tile_path = "res://CoreEngine/Maps/Resources/DemoMap/collision_tile.json"
+metadata/collision_fgtex_path = "res://CoreEngine/Maps/Resources/DemoMap/collision_fgtex.json"
+
+metadata/foreground_texture_anchor = "BottomLeft"
+metadata/foreground_texture_upscale = "0.6"
+metadata/background_texture_anchor = "BottomLeft"
+metadata/background_texture_upscale = "0.6"
+
+[node name="ForegroundTextureLayer" type="Node2D" parent="."]
+z_index = -1
+
+[node name="ForegroundTexture" type="Sprite2D" parent="ForegroundTextureLayer"]
+centered = false
+position = Vector2(0, 0)
+
+texture = ExtResource("fg_demomap")
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -100
+
+[node name="BackgroundTexture" type="TextureRect" parent="BackgroundLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+texture = ExtResource("bg_demomapbackground_star")
+[node name="TileMap" type="Node2D" parent="."]
+
+[node name="Foreground" type="TileMapLayer" parent="TileMap"]
+use_parent_material = true
+tile_set = ExtResource("1_tileset")
+tile_map_data = PackedByteArray()
+
+[node name="Background" type="TileMapLayer" parent="TileMap"]
+visible = false
+z_index = -1
+use_parent_material = true
+tile_set = ExtResource("1_tileset")
+tile_map_data = PackedByteArray()
+
+[node name="RoomInstance" parent="." instance=ExtResource("2_room")]
+
+[node name="Portal" parent="." instance=ExtResource("3_portal")]
+position = Vector2(100, 100)
+target_map = ""
+target_area = &""

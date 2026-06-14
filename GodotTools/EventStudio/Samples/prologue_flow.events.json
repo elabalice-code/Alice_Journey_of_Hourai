@@ -1,0 +1,76 @@
+{
+  "name": "PrologueFlow",
+  "version": "1.0.0",
+  "startEventId": "evt_prologue_start",
+  "events": [
+    {
+      "id": "evt_prologue_start",
+      "title": "序章开始",
+      "domain": "Story",
+      "mapScope": "",
+      "dialogueScope": "",
+      "combatScope": "",
+      "enabled": true,
+      "oneShot": true,
+      "priority": 100,
+      "cooldownSeconds": 0,
+      "triggers": [
+        {
+          "type": "Manual",
+          "sourceDomain": "System",
+          "signal": "Game.StartNew",
+          "conditionExpr": "",
+          "debounceMs": 0
+        }
+      ],
+      "actions": [
+        {
+          "type": "StartDialogue",
+          "targetEventId": "",
+          "delayMs": 0,
+          "payloadJson": "{\"dialogueId\":\"dlg_prologue_0001\"}"
+        },
+        {
+          "type": "StartEvent",
+          "targetEventId": "evt_after_dialogue",
+          "delayMs": 10,
+          "payloadJson": ""
+        }
+      ],
+      "notes": "序章第一段对白"
+    },
+    {
+      "id": "evt_after_dialogue",
+      "title": "对白结束切图",
+      "domain": "Dialogue",
+      "mapScope": "",
+      "dialogueScope": "dlg_prologue_0001",
+      "combatScope": "",
+      "enabled": true,
+      "oneShot": true,
+      "priority": 100,
+      "cooldownSeconds": 0,
+      "triggers": [
+        {
+          "type": "DialogueEnd",
+          "sourceDomain": "Dialogue",
+          "signal": "Dialogue.End",
+          "conditionExpr": "dialogue_id == \"dlg_prologue_0001\"",
+          "debounceMs": 0
+        }
+      ],
+      "actions": [
+        {
+          "type": "ChangeMap",
+          "targetEventId": "",
+          "delayMs": 0,
+          "payloadJson": "{\"map\":\"res://CoreEngine/Maps/DiceRoom.tscn\"}"
+        }
+      ],
+      "notes": "对白结束后切入起始地图"
+    }
+  ],
+  "globalVariables": {
+    "chapter": "prologue"
+  }
+}

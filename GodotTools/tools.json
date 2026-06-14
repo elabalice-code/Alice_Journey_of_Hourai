@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "toolsRoot": "GodotTools",
+  "outputRoot": "GodotTools-Build",
+  "tools": [
+    {
+      "id": "event-studio",
+      "name": "EventStudio",
+      "category": "event",
+      "purpose": "Event graph and runtime event data editing.",
+      "project": "GodotTools/EventStudio/EventStudio/EventStudio.csproj",
+      "output": "GodotTools-Build/EventStudio",
+      "launch": {
+        "kind": "dotnet-run",
+        "args": []
+      },
+      "selfTest": {
+        "kind": "dotnet-run",
+        "args": [
+          "--agent-self-test"
+        ]
+      },
+      "requiresProjectRoot": false,
+      "notes": "WinForms editor. Agent validation uses an in-process event project roundtrip."
+    },
+    {
+      "id": "event-studio-replay-client",
+      "name": "EventStudioReplayClient",
+      "category": "replay",
+      "purpose": "Scriptable replay/control client for EventStudio automation.",
+      "project": "GodotTools/EventStudioReplay/Client/EventStudioReplayClient.csproj",
+      "output": "GodotTools-Build/EventStudioReplayClient",
+      "launch": {
+        "kind": "dotnet-run",
+        "args": [
+          "--help"
+        ]
+      },
+      "selfTest": {
+        "kind": "dotnet-run",
+        "args": [
+          "--agent-self-test"
+        ]
+      },
+      "requiresProjectRoot": false,
+      "notes": "Console tool. Agent validation checks script parsing and base64 text handling without requiring a live pipe server."
+    },
+    {
+      "id": "event-studio-replay-host",
+      "name": "EventStudioReplayHost",
+      "category": "validation",
+      "purpose": "Headless replay host and behavior simulator.",
+      "project": "GodotTools/EventStudioReplay/Host/EventStudioReplayHost.csproj",
+      "output": "GodotTools-Build/EventStudioReplayHost",
+      "launch": {
+        "kind": "dotnet-run",
+        "args": []
+      },
+      "selfTest": {
+        "kind": "dotnet-run",
+        "args": [
+          "--agent-self-test"
+        ]
+      },
+      "requiresProjectRoot": false,
+      "notes": "Runs as a named-pipe host during interactive replay. Agent validation exercises the host command handler directly."
+    },
+    {
+      "id": "event-studio-replay-server",
+      "name": "EventStudioReplayServer",
+      "category": "replay",
+      "purpose": "WinForms replay server for UI-driven EventStudio automation.",
+      "project": "GodotTools/EventStudioReplay/Server/EventStudioReplayServer.csproj",
+      "output": "GodotTools-Build/EventStudioReplayServer",
+      "launch": {
+        "kind": "dotnet-run",
+        "args": []
+      },
+      "selfTest": {
+        "kind": "dotnet-run",
+        "args": [
+          "--agent-self-test"
+        ]
+      },
+      "requiresProjectRoot": false,
+      "notes": "WinForms server. Agent validation checks replay protocol serialization without opening the UI."
+    },
+    {
+      "id": "map-editor",
+      "name": "MapEditor",
+      "category": "map",
+      "purpose": "Map import, validation, editing support, portal animation extraction, and Godot scene patch helpers.",
+      "project": "GodotTools/MapEditor/MapEditor/MapEditor.csproj",
+      "output": "GodotTools/MapEditor/MapEditor/bin/Release/net8.0-windows",
+      "launch": {
+        "kind": "dotnet-run",
+        "args": []
+      },
+      "selfTest": {
+        "kind": "dotnet-run",
+        "args": [
+          "agent-self-test",
+          "--godotRoot",
+          "{projectRoot}"
+        ]
+      },
+      "requiresProjectRoot": true,
+      "notes": "WinForms map tool with CLI commands. Agent validation checks model roundtrip and project-root shape."
+    },
+    {
+      "id": "resource-config",
+      "name": "ResourceConfig",
+      "category": "resource",
+      "purpose": "Project resource manifest export and res:// reference validation.",
+      "project": "GodotTools/ResourceConfig/ResourceConfig/ResourceConfig.csproj",
+      "output": "GodotTools-Build/ResourceConfig",
+      "launch": {
+        "kind": "dotnet-run",
+        "args": [
+          "export-index",
+          "--godotRoot",
+          "{projectRoot}",
+          "--scope",
+          "core",
+          "--out",
+          "{projectRoot}/BuildLogs/resource_index.json",
+          "--allow-missing-prefix",
+          "res://addons/CustomRunner/",
+          "--allow-missing-prefix",
+          "res://000_UserInput/"
+        ]
+      },
+      "selfTest": {
+        "kind": "dotnet-run",
+        "args": [
+          "--agent-self-test"
+        ]
+      },
+      "requiresProjectRoot": true,
+      "notes": "Console resource validation tool. Use validate/export-manifest to prepare resource configuration workflows."
+    },
+    {
+      "id": "tool-hub",
+      "name": "ToolHub",
+      "category": "utility",
+      "purpose": "Manifest-facing CLI for listing, inspecting, and validating external tool metadata.",
+      "project": "GodotTools/ToolHub/ToolHub/ToolHub.csproj",
+      "output": "GodotTools-Build/ToolHub",
+      "launch": {
+        "kind": "dotnet-run",
+        "args": [
+          "list",
+          "--godotRoot",
+          "{projectRoot}"
+        ]
+      },
+      "selfTest": {
+        "kind": "dotnet-run",
+        "args": [
+          "--agent-self-test"
+        ]
+      },
+      "requiresProjectRoot": true,
+      "notes": "Use ToolHub as the first stop for Agent/Coder tool discovery."
+    }
+  ]
+}

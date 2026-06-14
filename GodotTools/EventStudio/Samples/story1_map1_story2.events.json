@@ -1,0 +1,106 @@
+{
+  "name": "Story1Map1Story2",
+  "version": "1.0.0",
+  "startEventId": "evt_story_1",
+  "events": [
+    {
+      "id": "evt_story_1",
+      "title": "剧情1",
+      "domain": "Story",
+      "mapScope": "",
+      "dialogueScope": "",
+      "combatScope": "",
+      "enabled": true,
+      "oneShot": true,
+      "priority": 100,
+      "cooldownSeconds": 0,
+      "triggers": [
+        {
+          "type": "Manual",
+          "sourceDomain": "System",
+          "signal": "Game.StartNew",
+          "conditionExpr": "",
+          "debounceMs": 0
+        }
+      ],
+      "actions": [
+        {
+          "type": "StartDialogue",
+          "targetEventId": "",
+          "delayMs": 0,
+          "payloadJson": "{\"dialogueId\":\"dlg_story_1\",\"speaker\":\"旁白\",\"storyText\":\"剧情1：进入地图1之前，先播放一段引导剧情。\",\"npcText\":\"\"}"
+        },
+        {
+          "type": "StartEvent",
+          "targetEventId": "evt_enter_map_1",
+          "delayMs": 10,
+          "payloadJson": ""
+        }
+      ],
+      "notes": "开始游戏先进入剧情1"
+    },
+    {
+      "id": "evt_enter_map_1",
+      "title": "剧情1结束后进入地图1",
+      "domain": "Dialogue",
+      "mapScope": "",
+      "dialogueScope": "dlg_story_1",
+      "combatScope": "",
+      "enabled": true,
+      "oneShot": true,
+      "priority": 100,
+      "cooldownSeconds": 0,
+      "triggers": [
+        {
+          "type": "DialogueEnd",
+          "sourceDomain": "Dialogue",
+          "signal": "Dialogue.End",
+          "conditionExpr": "dialogue_id == \"dlg_story_1\"",
+          "debounceMs": 0
+        }
+      ],
+      "actions": [
+        {
+          "type": "ChangeMap",
+          "targetEventId": "",
+          "delayMs": 0,
+          "payloadJson": "{\"map\":\"res://CoreEngine/Maps/DiceRoom.tscn\"}"
+        }
+      ],
+      "notes": "剧情1结束后切到地图1"
+    },
+    {
+      "id": "evt_story_2",
+      "title": "离开地图1时触发剧情2",
+      "domain": "Map",
+      "mapScope": "res://CoreEngine/Maps/DiceRoom.tscn",
+      "dialogueScope": "",
+      "combatScope": "",
+      "enabled": true,
+      "oneShot": true,
+      "priority": 100,
+      "cooldownSeconds": 0,
+      "triggers": [
+        {
+          "type": "LeaveMap",
+          "sourceDomain": "Map",
+          "signal": "Map.Exit",
+          "conditionExpr": "from_room_path == \"res://CoreEngine/Maps/DiceRoom.tscn\"",
+          "debounceMs": 0
+        }
+      ],
+      "actions": [
+        {
+          "type": "StartDialogue",
+          "targetEventId": "",
+          "delayMs": 0,
+          "payloadJson": "{\"dialogueId\":\"dlg_story_2\",\"speaker\":\"旁白\",\"storyText\":\"剧情2：离开地图1出口后，继续后续剧情。\",\"npcText\":\"\"}"
+        }
+      ],
+      "notes": "地图1出口触发剧情2"
+    }
+  ],
+  "globalVariables": {
+    "chapter": "story1_map1_story2"
+  }
+}

@@ -1,0 +1,584 @@
+[gd_scene load_steps=13 format=3 uid="uid://c3xqaietfgs7l"]
+
+[ext_resource type="Script" uid="uid://btgvo27tngq4o" path="res://CoreEngine/Scripts/Systems/Game.gd" id="1_xdpfu"]
+[ext_resource type="PackedScene" uid="uid://xpbhai8nlgtx" path="res://CoreEngine/Player.tscn" id="2_bam1a"]
+[ext_resource type="PackedScene" uid="uid://dch8dyylb7526" path="res://addons/MetroidvaniaSystem/Template/Nodes/Minimap.tscn" id="3_a3gfy"]
+[ext_resource type="Texture2D" uid="uid://wiq0mic5m6is" path="res://CoreEngine/Sprites/Objects/Collectible.png" id="3_kng3d"]
+[ext_resource type="PackedScene" uid="uid://bd5w7n7gew76f" path="res://CoreEngine/Objects/CollectionGridItem.tscn" id="4_uuja8"]
+[ext_resource type="Texture2D" uid="uid://dpwli04va881g" path="res://CoreEngine/Sprites/UI/MapItem.png" id="6_lpbfn"]
+[ext_resource type="Script" path="res://CoreEngine/Scripts/UI/BattleHUD.gd" id="7_1k0bg"]
+[ext_resource type="PackedScene" path="res://CoreEngine/Objects/InventoryUI.tscn" id="8_1lq1n"]
+
+[sub_resource type="GDScript" id="GDScript_u7odr"]
+resource_name = "MapWindow"
+script/source = "# The window that contains a bigger map overview than minimap. Toggled with M.
+extends Panel
+
+@onready var player: CharacterBody2D = %Player
+@onready var minimap: Control = %Minimap
+@onready var top_draw: Control = $TopDraw
+
+# The size of the window in cells.
+var SIZE: Vector2i
+
+# MapView object that draws cells.
+var map_view: MapView
+
+# The position where the player started (for the vector feature).
+var starting_coords: Vector2i
+# The player location node from MetSys.add_player_location()
+var player_location: Node2D
+# The vector feature, toggled with D. It displays an arrow from player's starting point to the current position.
+# It's purely to show custom drawing on the map.
+var show_delta: bool
+# The offset for drawing delta vector, updated with map panning.
+var offset: Vector2i
+
+func _ready() -> void:
+	# Cellular size is total size divided by cell size.
+	SIZE = size / MetSys.CELL_SIZE
+	map_view = MetSys.make_map_view(self, -SIZE / 2, SIZE, 0)
+	
+	# Create player location. We need a reference to update its offset.
+	player_location = MetSys.add_player_location(self)
+
+# Draws the delta vector. Note that TopDraw node is used, to make sure that it appears above cells.
+func _on_top_draw() -> void:
+	# Get the current player coordinates.
+	var coords := MetSys.get_current_flat_coords()
+	# If the delta vector (D) is enabled and player isn't on the starting position...
+	if show_delta and coords != starting_coords:
+		var start_pos := MetSys.get_cell_position(starting_coords - offset)
+		var current_pos := MetSys.get_cell_position(coords - offset)
+		# draw the vector...
+		top_draw.draw_line(start_pos, current_pos, Color.WHITE, 2)
+		
+		const arrow_size = 4
+		# and arrow. This code shows how to draw custom stuff on the map outside the MetSys functions.
+		top_draw.draw_set_transform(current_pos, start_pos.angle_to_point(current_pos), Vector2.ONE)
+		top_draw.draw_primitive([Vector2(-arrow_size, -arrow_size), Vector2(arrow_size, 0), Vector2(-arrow_size, arrow_size)], [Color.WHITE], [])
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if event.pressed:
+			# Toggle visibility when pressing M.
+			if event.keycode == KEY_M:
+				visible = not visible
+				minimap.visible = not visible # Make minimap invisible when full map is visible.
+				
+				if visible:
+					# Pause the player when opening map.
+					player.process_mode = Node.PROCESS_MODE_DISABLED
+					# Update map offset when opening it.
+					update_offset()
+				else:
+					player.process_mode = Node.PROCESS_MODE_INHERIT
+			elif event.keycode == KEY_D:
+				# D toggles position tracking (delta vector).
+				show_delta = not show_delta
+				top_draw.queue_redraw()
+			elif visible:
+				# Move with arrow keys.
+				var move_offset: Vector2i
+				if event.keycode == KEY_LEFT:
+					move_offset = Vector2i.LEFT
+				elif event.keycode == KEY_RIGHT:
+					move_offset = Vector2i.RIGHT
+				elif event.keycode == KEY_UP:
+					move_offset = Vector2i.UP
+				elif event.keycode == KEY_DOWN:
+					move_offset = Vector2i.DOWN
+				
+				# This moves the MapView's visible area, ensuring that only newly visible cells are redrawn.
+				map_view.move(move_offset)
+				# Player position node needs to be moved accordingly.
+				player_location.offset = -Vector2(map_view.begin) * MetSys.CELL_SIZE
+				# Update delta vector.
+				offset += move_offset
+				top_draw.queue_redraw()
+
+# Assigns the initial offset when the map is opened. It centers on the player position.
+func update_offset():
+	offset = MetSys.get_current_flat_coords() - SIZE / 2
+	# Player position node needs to be moved accordingly.
+	player_location.offset = -Vector2(offset) * MetSys.CELL_SIZE
+	# Updates map view initial position.
+	map_view.move_to(Vector3i(offset.x, offset.y, MetSys.current_layer))
+	# Update all cells of MapView to reflect the current state.
+	map_view.update_all()
+
+func reset_starting_coords():
+	# Starting position for the delta vector.
+	var coords := MetSys.get_current_flat_coords()
+	starting_coords = Vector2i(coords.x, coords.y)
+	top_draw.queue_redraw()
+"
+
+[sub_resource type="GDScript" id="GDScript_66suq"]
+resource_name = "PercentLabel"
+script/source = "# Displays map completion percentage
+extends Label
+
+func _ready() -> void:
+	# The percentage may change when map is updated.
+	MetSys.map_updated.connect(update)
+
+func _notification(what: int) -> void:
+	# Update when the label is made visible. This happens when the map is toggled.
+	if what == NOTIFICATION_VISIBILITY_CHANGED:
+		update()
+
+func update():
+	# Only update when visible.
+	if is_visible_in_tree():
+		# Show the percentage.
+		text = \"%03d%%\" % int(MetSys.get_explored_ratio() * 100)
+"
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_vdqrf"]
+content_margin_left = 2.0
+content_margin_right = 2.0
+bg_color = Color(0, 0, 0, 0.752941)
+
+[sub_resource type="GDScript" id="GDScript_lpbfn"]
+resource_name = "CollectionGrid"
+script/source = "# This element displays a grid of all collectibles (orbs and map), divided into areas.
+# See also CollectibleGridItem.tscn. An item is visible in the grid if it was collected.
+extends PanelContainer
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey:
+		if event.pressed:
+			# Toggle visibility when pressing M.
+			if event.keycode == KEY_M:
+				visible = not visible
+				# If visible, update collection grid items.
+				if visible:
+					propagate_call(&\"update_collectible\")
+"
+
+[node name="Game" type="Node2D"]
+script = ExtResource("1_xdpfu")
+starting_map = "uid://cjk52vjugqh5"
+
+[node name="Player" parent="." groups=["player"] instance=ExtResource("2_bam1a")]
+unique_name_in_owner = true
+position = Vector2(368, 248)
+
+[node name="Camera2D" type="Camera2D" parent="Player"]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="Minimap" parent="UI" instance=ExtResource("3_a3gfy")]
+unique_name_in_owner = true
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -152.0
+offset_top = 8.0
+offset_right = -8.0
+offset_bottom = 104.0
+grow_horizontal = 0
+display_player_location = true
+
+[node name="Background" type="Panel" parent="UI/Minimap"]
+show_behind_parent = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="MapWindow" type="Panel" parent="UI"]
+visible = false
+clip_contents = true
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -240.0
+offset_top = -160.0
+offset_right = 240.0
+offset_bottom = 160.0
+grow_horizontal = 2
+grow_vertical = 2
+script = SubResource("GDScript_u7odr")
+
+[node name="Percent" type="Label" parent="UI/MapWindow"]
+layout_mode = 0
+offset_right = 40.0
+offset_bottom = 23.0
+text = "0%"
+script = SubResource("GDScript_66suq")
+
+[node name="Label" type="Label" parent="UI/MapWindow"]
+z_index = 5
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_top = -23.0
+offset_right = 40.0
+grow_vertical = 0
+theme_override_styles/normal = SubResource("StyleBoxFlat_vdqrf")
+text = "Press D to toggle delta vector"
+
+[node name="TopDraw" type="Control" parent="UI/MapWindow"]
+z_index = 5
+anchors_preset = 0
+offset_right = 40.0
+offset_bottom = 40.0
+
+[node name="CollectionGrid" type="PanelContainer" parent="UI"]
+visible = false
+offset_left = 85.0
+offset_top = 81.0
+offset_right = 153.0
+offset_bottom = 224.0
+script = SubResource("GDScript_lpbfn")
+
+[node name="BattleHUD" type="Control" parent="UI"]
+offset_left = 8.0
+offset_top = 40.0
+offset_right = 320.0
+offset_bottom = 120.0
+script = ExtResource("7_1k0bg")
+
+[node name="InventoryUI" parent="UI" instance=ExtResource("8_1lq1n")]
+
+[node name="PlayerBar" type="TextureProgressBar" parent="UI/BattleHUD"]
+offset_right = 256.0
+offset_bottom = 24.0
+
+[node name="PlayerLabel" type="Label" parent="UI/BattleHUD"]
+offset_top = 26.0
+offset_right = 312.0
+offset_bottom = 49.0
+text = "玩家 HP 0/0  护甲 0"
+
+[node name="EnemyBar" type="TextureProgressBar" parent="UI/BattleHUD"]
+offset_top = 56.0
+offset_right = 256.0
+offset_bottom = 80.0
+
+[node name="EnemyLabel" type="Label" parent="UI/BattleHUD"]
+offset_top = 82.0
+offset_right = 312.0
+offset_bottom = 105.0
+text = "敌人 HP 0/0  护甲 0"
+
+[node name="ResultLabel" type="Label" parent="UI/BattleHUD"]
+visible = false
+offset_left = 0.0
+offset_top = 110.0
+offset_right = 312.0
+offset_bottom = 133.0
+text = "胜利"
+horizontal_alignment = 1
+
+[node name="CollectionGrid" type="HBoxContainer" parent="UI/CollectionGrid"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI/CollectionGrid/CollectionGrid"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer"]
+layout_mode = 2
+text = "D"
+horizontal_alignment = 1
+
+[node name="CollectionGridItem" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+id = "StartingPoint/./Collectible"
+
+[node name="CollectionGridItem2" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+id = "RelicRoom/./Collectible"
+
+[node name="CollectionGridItem3" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+id = "Corridor/./Collectible"
+
+[node name="CollectionGridItem4" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+id = "lava_orb"
+
+[node name="CollectionGridItem5" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("6_lpbfn")
+id = "RightStaircase/./MapItem"
+
+[node name="VBoxContainer2" type="VBoxContainer" parent="UI/CollectionGrid/CollectionGrid"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer2"]
+layout_mode = 2
+text = "S"
+horizontal_alignment = 1
+
+[node name="CollectionGridItem5" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer2" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+id = "SecretChamber/./Collectible"
+
+[node name="CollectionGridItem6" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer2" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+id = "LoopRoom1/./Collectible"
+
+[node name="VBoxContainer3" type="VBoxContainer" parent="UI/CollectionGrid/CollectionGrid"]
+layout_mode = 2
+
+[node name="Label2" type="Label" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer3"]
+layout_mode = 2
+text = "R"
+horizontal_alignment = 1
+
+[node name="CollectionGridItem5" parent="UI/CollectionGrid/CollectionGrid/VBoxContainer3" instance=ExtResource("4_uuja8")]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+id = "random_collectible"
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UI"]
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 48.0
+offset_bottom = 34.0
+
+[node name="TextureRect" type="TextureRect" parent="UI/HBoxContainer"]
+layout_mode = 2
+texture = ExtResource("3_kng3d")
+expand_mode = 2
+stretch_mode = 5
+
+[node name="CollectibleCount" type="Label" parent="UI/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0"
+vertical_alignment = 1
+
+[node name="TitleMenu" type="Control" parent="UI"]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="UI/TitleMenu"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.85)
+
+[node name="CenterContainer" type="CenterContainer" parent="UI/TitleMenu"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI/TitleMenu/CenterContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="UI/TitleMenu/CenterContainer/VBoxContainer"]
+layout_mode = 2
+text = "Metroidvania System"
+horizontal_alignment = 1
+
+[node name="ContinueButton" type="Button" parent="UI/TitleMenu/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Continue"
+
+[node name="StartButton" type="Button" parent="UI/TitleMenu/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Start"
+
+[node name="SettingsButton" type="Button" parent="UI/TitleMenu/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Setting"
+
+[node name="QuitButton" type="Button" parent="UI/TitleMenu/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Quit"
+
+[node name="SettingsPanel" type="PanelContainer" parent="UI/TitleMenu"]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -160.0
+offset_top = -90.0
+offset_right = 160.0
+offset_bottom = 90.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI/TitleMenu/SettingsPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Label" type="Label" parent="UI/TitleMenu/SettingsPanel/VBoxContainer"]
+layout_mode = 2
+text = "Setting"
+horizontal_alignment = 1
+
+[node name="LanguageRow" type="HBoxContainer" parent="UI/TitleMenu/SettingsPanel/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="LanguageLabel" type="Label" parent="UI/TitleMenu/SettingsPanel/VBoxContainer/LanguageRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Language"
+
+[node name="LanguageOption" type="OptionButton" parent="UI/TitleMenu/SettingsPanel/VBoxContainer/LanguageRow"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="HBoxContainer" type="HBoxContainer" parent="UI/TitleMenu/SettingsPanel/VBoxContainer"]
+layout_mode = 2
+alignment = 1
+
+[node name="WindowedButton" type="Button" parent="UI/TitleMenu/SettingsPanel/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Window"
+
+[node name="FullscreenButton" type="Button" parent="UI/TitleMenu/SettingsPanel/VBoxContainer/HBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Fullscreen"
+
+[node name="BackButton" type="Button" parent="UI/TitleMenu/SettingsPanel/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Back"
+
+[node name="LoadingScreen" type="Control" parent="UI"]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="UI/LoadingScreen"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.85)
+
+[node name="CenterContainer" type="CenterContainer" parent="UI/LoadingScreen"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UI/LoadingScreen/CenterContainer"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="LoadingLabel" type="Label" parent="UI/LoadingScreen/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Loading..."
+horizontal_alignment = 1
+
+[node name="LoadingBar" type="ProgressBar" parent="UI/LoadingScreen/CenterContainer/VBoxContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 0.0
+max_value = 1.0
+value = 0.0
+
+[node name="PrologueScreen" type="Control" parent="UI"]
+unique_name_in_owner = true
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background2" type="ColorRect" parent="UI/PrologueScreen"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.92)
+
+[node name="VBox" type="VBoxContainer" parent="UI/PrologueScreen"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 8
+
+[node name="Image" type="TextureRect" parent="UI/PrologueScreen/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+expand_mode = 1
+stretch_mode = 5
+
+[node name="DialogueBox" type="PanelContainer" parent="UI/PrologueScreen/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="DialogueText" type="Label" parent="UI/PrologueScreen/VBox/DialogueBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Caption" type="Label" parent="UI/PrologueScreen/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Buttons" type="HBoxContainer" parent="UI/PrologueScreen/VBox"]
+layout_mode = 2
+alignment = 1
+
+[node name="SkipButton" type="Button" parent="UI/PrologueScreen/VBox/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Skip"
+
+[node name="NextButton" type="Button" parent="UI/PrologueScreen/VBox/Buttons"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Next"
+
+[node name="RestartConfirmDialog" type="ConfirmationDialog" parent="UI/TitleMenu"]
+unique_name_in_owner = true
+title = "是否立刻重启游戏"
+dialog_text = "切换到全屏需要重启游戏，是否现在重启？"
+ok_button_text = "立刻重启"
+cancel_button_text = "取消"
+
+[connection signal="draw" from="UI/MapWindow/TopDraw" to="UI/MapWindow" method="_on_top_draw"]

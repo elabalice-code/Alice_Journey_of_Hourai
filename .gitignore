@@ -1,0 +1,24 @@
+# Godot local/editor state
+.godot/
+
+# Generated logs and tool build outputs
+BuildLogs/
+GodotTools-Build/
+
+# .NET build outputs
+bin/
+obj/
+**/bin/
+**/obj/
+
+# Local debug/runtime scratch
+AgentDebug/
+
+# IDE/system noise
+.vs/
+.idea/
+*.user
+*.suo
+*.tmp
+Thumbs.db
+Desktop.ini

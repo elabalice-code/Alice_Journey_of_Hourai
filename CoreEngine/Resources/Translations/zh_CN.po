@@ -1,0 +1,53 @@
+# LANGUAGE translation for CoreEngine
+msgid ""
+msgstr ""
+"Project-Id-Version: CoreEngine\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "MENU_CONTINUE"
+msgstr "继续游戏"
+
+msgid "MENU_START"
+msgstr "开始游戏"
+
+msgid "MENU_SETTINGS"
+msgstr "设置"
+
+msgid "MENU_QUIT"
+msgstr "退出"
+
+msgid "MENU_WINDOW"
+msgstr "窗口"
+
+msgid "MENU_FULLSCREEN"
+msgstr "全屏"
+
+msgid "MENU_BACK"
+msgstr "返回"
+
+msgid "MENU_LANGUAGE"
+msgstr "语言"
+
+msgid "LANG_AUTO"
+msgstr "自动"
+
+msgid "LANG_EN"
+msgstr "English"
+
+msgid "LANG_ZH_CN"
+msgstr "中文"
+
+msgid "LOADING"
+msgstr "加载中..."
+
+msgid "LOADING_CHAPTER"
+msgstr "加载章节资源..."
+
+msgid "PROLOGUE_SKIP"
+msgstr "跳过序章"
+
+msgid "PROLOGUE_NEXT"
+msgstr "下一步"

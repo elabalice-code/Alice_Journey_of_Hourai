@@ -1,0 +1,42 @@
+[gd_scene load_steps=6 format=4 uid="uid://w7aowvacf503"]
+
+[ext_resource type="TileSet" uid="uid://bwpcg2opya34n" path="res://CoreEngine/Resources/Tileset.tres" id="1_tileset"]
+[ext_resource type="Script" uid="uid://t3mpl4t3r00mmap" path="res://CoreEngine/Scripts/World/TemplateRoomMap.gd" id="2_script"]
+[ext_resource type="PackedScene" uid="uid://bsg0351mx3b4u" path="res://addons/MetroidvaniaSystem/Nodes/RoomInstance.tscn" id="3_room_instance"]
+[ext_resource type="PackedScene" uid="uid://cwrf84g5mlucd" path="res://CoreEngine/Objects/Portal.tscn" id="4_portal"]
+
+[node name="Map" type="Node2D"]
+script = ExtResource("2_script")
+
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -100
+
+[node name="BackgroundTexture" type="TextureRect" parent="BackgroundLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="FallbackColor" type="ColorRect" parent="BackgroundLayer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="TileMap" type="Node2D" parent="."]
+unique_name_in_owner = true
+
+[node name="Foreground" type="TileMapLayer" parent="TileMap"]
+use_parent_material = true
+tile_set = ExtResource("1_tileset")
+
+[node name="RoomInstance" parent="." instance=ExtResource("3_room_instance")]
+
+[node name="ExitLeft" parent="." instance=ExtResource("4_portal")]
+position = Vector2(96, 320)
+
+[node name="ExitRight" parent="." instance=ExtResource("4_portal")]
+position = Vector2(768, 320)

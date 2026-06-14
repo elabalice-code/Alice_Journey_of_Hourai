@@ -1,0 +1,16 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.bmp binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.glb binary
+*.psd binary
+*.mp4 binary
+*.wav binary
+*.ogg binary
+*.mp3 binary
+*.lnk binary
