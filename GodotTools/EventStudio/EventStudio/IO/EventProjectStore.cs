@@ -30,7 +30,7 @@ public static class EventProjectStore
     public static RuntimeEventGraph BuildRuntimeGraph(EventProject project)
     {
         var nodes = new List<RuntimeEventNode>(project.Events.Count);
-        foreach (var evt in project.Events)
+        foreach (var evt in project.Events.Where(x => x.NodeKind != EventNodeKind.TaskGroup))
         {
             var links = evt.Actions
                 .Where(x => x.Type == DispatchActionType.StartEvent && !string.IsNullOrWhiteSpace(x.TargetEventId))
@@ -41,6 +41,11 @@ public static class EventProjectStore
             {
                 Id = evt.Id,
                 Domain = evt.Domain,
+                InteractionObjectId = evt.InteractionObjectId,
+                StateKey = evt.StateKey,
+                StateValueOnActivate = evt.StateValueOnActivate,
+                CompletionItemId = evt.CompletionItemId,
+                CompletionItemCount = evt.CompletionItemCount,
                 Scope = new RuntimeScope
                 {
                     Map = evt.MapScope,
@@ -65,7 +70,7 @@ public static class EventProjectStore
         var issues = new List<ValidationIssue>();
         if (project.Events.Count == 0)
         {
-            issues.Add(new ValidationIssue(ValidationSeverity.Error, "PROJECT_EMPTY", "工程中没有任何事件。"));
+            issues.Add(new ValidationIssue(ValidationSeverity.Error, "PROJECT_EMPTY", "Project has no tasks or events."));
             return issues;
         }
 
@@ -74,32 +79,51 @@ public static class EventProjectStore
         {
             if (string.IsNullOrWhiteSpace(evt.Id))
             {
-                issues.Add(new ValidationIssue(ValidationSeverity.Error, "EVENT_ID_EMPTY", $"事件“{evt.Title}”缺少 Id。"));
+                issues.Add(new ValidationIssue(ValidationSeverity.Error, "EVENT_ID_EMPTY", $"Task '{evt.Title}' is missing Id."));
                 continue;
             }
 
             if (!idLookup.TryAdd(evt.Id.Trim(), evt))
             {
-                issues.Add(new ValidationIssue(ValidationSeverity.Error, "EVENT_ID_DUP", $"事件 Id 重复：{evt.Id}"));
+                issues.Add(new ValidationIssue(ValidationSeverity.Error, "EVENT_ID_DUP", $"Duplicate task/event Id: {evt.Id}"));
             }
 
-            if (!evt.Enabled)
+            if (!evt.Enabled && evt.NodeKind != EventNodeKind.TaskGroup)
             {
-                issues.Add(new ValidationIssue(ValidationSeverity.Warning, "EVENT_DISABLED", $"事件“{evt.Id}”被禁用，可能导致流程断链。"));
+                issues.Add(new ValidationIssue(ValidationSeverity.Warning, "EVENT_DISABLED", $"Task/event '{evt.Id}' is disabled."));
             }
         }
 
         if (string.IsNullOrWhiteSpace(project.StartEventId))
         {
-            issues.Add(new ValidationIssue(ValidationSeverity.Error, "START_EMPTY", "StartEventId 为空。"));
+            issues.Add(new ValidationIssue(ValidationSeverity.Error, "START_EMPTY", "StartEventId is empty."));
         }
-        else if (!idLookup.ContainsKey(project.StartEventId.Trim()))
+        else if (!idLookup.TryGetValue(project.StartEventId.Trim(), out var startEvent))
         {
-            issues.Add(new ValidationIssue(ValidationSeverity.Error, "START_MISSING", $"StartEventId 未找到：{project.StartEventId}"));
+            issues.Add(new ValidationIssue(ValidationSeverity.Error, "START_MISSING", $"StartEventId not found: {project.StartEventId}"));
+        }
+        else if (startEvent.NodeKind == EventNodeKind.TaskGroup)
+        {
+            issues.Add(new ValidationIssue(ValidationSeverity.Error, "START_IS_GROUP", $"StartEventId points to display-only task group: {project.StartEventId}"));
         }
 
         foreach (var evt in project.Events)
         {
+            if (evt.NodeKind == EventNodeKind.TaskGroup)
+            {
+                if (evt.Triggers.Count > 0 || evt.Actions.Count > 0)
+                {
+                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "GROUP_HAS_FLOW", $"Task group {evt.Id} is display-only; triggers/actions are ignored."));
+                }
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(evt.ParentGroupId) &&
+                (!idLookup.TryGetValue(evt.ParentGroupId.Trim(), out var group) || group.NodeKind != EventNodeKind.TaskGroup))
+            {
+                issues.Add(new ValidationIssue(ValidationSeverity.Warning, "GROUP_MISSING", $"Task {evt.Id} references missing task group: {evt.ParentGroupId}"));
+            }
+
             for (var i = 0; i < evt.Actions.Count; i++)
             {
                 var action = evt.Actions[i];
@@ -110,18 +134,22 @@ public static class EventProjectStore
 
                 if (string.IsNullOrWhiteSpace(action.TargetEventId))
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_EMPTY", $"事件“{evt.Id}”的第 {i + 1} 个 StartEvent 动作缺少 TargetEventId。"));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_EMPTY", $"Task {evt.Id} StartEvent action #{i + 1} is missing TargetEventId."));
                     continue;
                 }
 
                 var target = action.TargetEventId.Trim();
-                if (!idLookup.ContainsKey(target))
+                if (!idLookup.TryGetValue(target, out var targetEvent))
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_MISSING", $"事件“{evt.Id}”引用了不存在的目标事件：{target}"));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_MISSING", $"Task {evt.Id} references missing target event: {target}"));
+                }
+                else if (targetEvent.NodeKind == EventNodeKind.TaskGroup)
+                {
+                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_GROUP", $"Task {evt.Id} points to display-only task group: {target}"));
                 }
                 else if (string.Equals(target, evt.Id, StringComparison.OrdinalIgnoreCase))
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "ACTION_SELF_LOOP", $"事件“{evt.Id}”存在自触发回路。"));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "ACTION_SELF_LOOP", $"Task {evt.Id} has a self loop."));
                 }
             }
         }
@@ -149,6 +177,11 @@ public sealed class RuntimeEventNode
 {
     public string Id { get; set; } = "";
     public EventDomain Domain { get; set; } = EventDomain.Story;
+    public string InteractionObjectId { get; set; } = "";
+    public string StateKey { get; set; } = "";
+    public string StateValueOnActivate { get; set; } = "";
+    public string CompletionItemId { get; set; } = "";
+    public int CompletionItemCount { get; set; }
     public RuntimeScope Scope { get; set; } = new();
     public int TriggerCount { get; set; }
     public List<string> NextEvents { get; set; } = [];

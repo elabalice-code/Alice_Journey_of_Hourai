@@ -14,6 +14,9 @@ public sealed class MainForm : Form
 
     private readonly SplitContainer _root = new() { Dock = DockStyle.Fill, SplitterDistance = 320 };
     private readonly ListBox _eventList = new() { Dock = DockStyle.Fill };
+    private readonly DataGridView _taskGrid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false };
+    private readonly BindingSource _taskGridSource = new();
+    private bool _syncingTaskSelection;
     private readonly PropertyGrid _eventGrid = new() { Dock = DockStyle.Fill, ToolbarVisible = false, HelpVisible = true };
     private readonly DataGridView _triggerGrid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false };
     private readonly DataGridView _actionGrid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false };
@@ -44,6 +47,7 @@ public sealed class MainForm : Form
         BuildLayout();
         BindProject();
         InitializeReplayInputs();
+        TryOpenDefaultSample();
         UpdateTitle();
     }
 
@@ -68,17 +72,52 @@ public sealed class MainForm : Form
         _editMenu.DropDownItems.Add(new ToolStripSeparator());
         _editMenu.DropDownItems.Add("校验项目", null, (_, _) => ValidateProjectAndReport());
 
+        RebuildReadableMenus();
         _menu.Items.AddRange([_fileMenu, _editMenu]);
         MainMenuStrip = _menu;
         Controls.Add(_menu);
     }
 
+    private void RebuildReadableMenus()
+    {
+        _fileMenu.Text = "File";
+        _editMenu.Text = "Edit";
+
+        _fileMenu.DropDownItems.Clear();
+        _fileMenu.DropDownItems.Add("New", null, (_, _) => NewProject());
+        _fileMenu.DropDownItems.Add("Open...", null, (_, _) => OpenProject());
+        _fileMenu.DropDownItems.Add("Save", null, (_, _) => SaveProject());
+        _fileMenu.DropDownItems.Add("Save As...", null, (_, _) => SaveProjectAs());
+        _fileMenu.DropDownItems.Add(new ToolStripSeparator());
+        _fileMenu.DropDownItems.Add("Export Runtime Graph...", null, (_, _) => ExportRuntimeGraph());
+        _fileMenu.DropDownItems.Add(new ToolStripSeparator());
+        _fileMenu.DropDownItems.Add("Exit", null, (_, _) => Close());
+
+        _editMenu.DropDownItems.Clear();
+        _editMenu.DropDownItems.Add("Add Task Group", null, (_, _) => AddTaskGroup());
+        _editMenu.DropDownItems.Add("Add Task", null, (_, _) => AddTask());
+        _editMenu.DropDownItems.Add("Delete Selected", null, (_, _) => RemoveSelectedEvent());
+        _editMenu.DropDownItems.Add(new ToolStripSeparator());
+        _editMenu.DropDownItems.Add("Add Trigger", null, (_, _) => AddTrigger());
+        _editMenu.DropDownItems.Add("Delete Trigger", null, (_, _) => RemoveTrigger());
+        _editMenu.DropDownItems.Add("Add Action", null, (_, _) => AddAction());
+        _editMenu.DropDownItems.Add("Delete Action", null, (_, _) => RemoveAction());
+        _editMenu.DropDownItems.Add(new ToolStripSeparator());
+        _editMenu.DropDownItems.Add("Validate Project", null, (_, _) => ValidateProjectAndReport());
+    }
+
     private void BuildLayout()
     {
+        _eventTab.Text = "Task Detail";
+        _triggerTab.Text = "Triggers";
+        _actionTab.Text = "Actions";
+        _projectTab.Text = "Project";
+
+        SetupTaskGrid();
         _eventList.DisplayMember = nameof(EventNode.Title);
         _eventList.SelectedIndexChanged += (_, _) => BindCurrentEvent();
         _eventList.ContextMenuStrip = BuildEventContextMenu();
-        _root.Panel1.Controls.Add(_eventList);
+        _root.Panel1.Controls.Add(_taskGrid);
 
         _eventTab.Controls.Add(_eventGrid);
         _triggerTab.Controls.Add(_triggerGrid);
@@ -94,6 +133,34 @@ public sealed class MainForm : Form
         _status.Items.Add(_statusText);
         Controls.Add(_root);
         Controls.Add(_status);
+    }
+
+    private void SetupTaskGrid()
+    {
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Kind", DataPropertyName = nameof(TaskRow.Kind), Width = 90 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Group", DataPropertyName = nameof(TaskRow.Group), Width = 150 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Id", DataPropertyName = nameof(TaskRow.Id), Width = 130 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Title", DataPropertyName = nameof(TaskRow.Title), Width = 180 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Interact Object", DataPropertyName = nameof(TaskRow.InteractionObjectId), Width = 150 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "State", DataPropertyName = nameof(TaskRow.State), Width = 150 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Completion Item", DataPropertyName = nameof(TaskRow.CompletionItem), Width = 150 });
+        _taskGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Enabled", DataPropertyName = nameof(TaskRow.Enabled), Width = 70 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Triggers", DataPropertyName = nameof(TaskRow.TriggerCount), Width = 70 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Actions", DataPropertyName = nameof(TaskRow.ActionCount), Width = 70 });
+        _taskGrid.RowHeadersVisible = false;
+        _taskGrid.DataSource = _taskGridSource;
+        _taskGrid.SelectionChanged += (_, _) => SelectEventFromTaskGrid();
+        _taskGrid.CellDoubleClick += (_, _) => _rightTabs.SelectedTab = _eventTab;
+        _taskGrid.ContextMenuStrip = BuildTaskContextMenu();
+    }
+
+    private ContextMenuStrip BuildTaskContextMenu()
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Add Task Group", null, (_, _) => AddTaskGroup());
+        menu.Items.Add("Add Task", null, (_, _) => AddTask());
+        menu.Items.Add("Delete Selected", null, (_, _) => RemoveSelectedEvent());
+        return menu;
     }
 
     private ContextMenuStrip BuildEventContextMenu()
@@ -162,6 +229,7 @@ public sealed class MainForm : Form
         _eventList.DataSource = null;
         _eventList.DataSource = _project.Events;
         _eventList.DisplayMember = nameof(EventNode.Title);
+        _taskGridSource.DataSource = BuildTaskRows();
         if (!string.IsNullOrWhiteSpace(selected))
         {
             var idx = _project.Events.FindIndex(x => x.Id == selected);
@@ -173,6 +241,68 @@ public sealed class MainForm : Form
         if (_eventList.SelectedIndex < 0 && _project.Events.Count > 0)
         {
             _eventList.SelectedIndex = 0;
+        }
+        SyncTaskGridSelection();
+    }
+
+    private List<TaskRow> BuildTaskRows()
+    {
+        var groups = _project.Events
+            .Where(x => x.NodeKind == EventNodeKind.TaskGroup)
+            .ToDictionary(x => x.Id, x => x.Title, StringComparer.OrdinalIgnoreCase);
+        return _project.Events.Select(evt => new TaskRow
+        {
+            Id = evt.Id,
+            Kind = evt.NodeKind == EventNodeKind.TaskGroup ? "Group" : "Task",
+            Group = string.IsNullOrWhiteSpace(evt.ParentGroupId) ? "" : groups.GetValueOrDefault(evt.ParentGroupId, evt.ParentGroupId),
+            Title = evt.Title,
+            InteractionObjectId = evt.InteractionObjectId,
+            State = string.IsNullOrWhiteSpace(evt.StateKey) ? "" : $"{evt.StateKey}={evt.StateValueOnActivate}",
+            CompletionItem = string.IsNullOrWhiteSpace(evt.CompletionItemId) ? "" : $"{evt.CompletionItemId} x{evt.CompletionItemCount}",
+            Enabled = evt.Enabled,
+            TriggerCount = evt.Triggers.Count,
+            ActionCount = evt.Actions.Count
+        }).ToList();
+    }
+
+    private void SyncTaskGridSelection()
+    {
+        if (_eventList.SelectedItem is not EventNode evt)
+        {
+            return;
+        }
+
+        _syncingTaskSelection = true;
+        try
+        {
+            foreach (DataGridViewRow row in _taskGrid.Rows)
+            {
+                if (row.DataBoundItem is TaskRow taskRow &&
+                    string.Equals(taskRow.Id, evt.Id, StringComparison.OrdinalIgnoreCase))
+                {
+                    row.Selected = true;
+                    _taskGrid.CurrentCell = row.Cells[0];
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _syncingTaskSelection = false;
+        }
+    }
+
+    private void SelectEventFromTaskGrid()
+    {
+        if (_syncingTaskSelection || _taskGrid.CurrentRow?.DataBoundItem is not TaskRow row)
+        {
+            return;
+        }
+
+        var idx = _project.Events.FindIndex(x => string.Equals(x.Id, row.Id, StringComparison.OrdinalIgnoreCase));
+        if (idx >= 0 && _eventList.SelectedIndex != idx)
+        {
+            _eventList.SelectedIndex = idx;
         }
     }
 
@@ -191,8 +321,12 @@ public sealed class MainForm : Form
         _eventGrid.PropertyValueChanged -= EventGrid_PropertyValueChanged;
         _eventGrid.PropertyValueChanged += EventGrid_PropertyValueChanged;
 
-        _triggerGrid.DataSource = new BindingSource(new BindingList<TriggerRule>(evt.Triggers), null);
-        _actionGrid.DataSource = new BindingSource(new BindingList<DispatchAction>(evt.Actions), null);
+        var isGroup = evt.NodeKind == EventNodeKind.TaskGroup;
+        _triggerGrid.Enabled = !isGroup;
+        _actionGrid.Enabled = !isGroup;
+        _triggerGrid.DataSource = isGroup ? null : new BindingSource(new BindingList<TriggerRule>(evt.Triggers), null);
+        _actionGrid.DataSource = isGroup ? null : new BindingSource(new BindingList<DispatchAction>(evt.Actions), null);
+        SyncTaskGridSelection();
         UpdateStatus();
     }
 
@@ -202,19 +336,46 @@ public sealed class MainForm : Form
         {
             BindEventList();
         }
+        _taskGridSource.DataSource = BuildTaskRows();
+        SyncTaskGridSelection();
         MarkDirty();
     }
 
     private void AddEvent()
     {
-        var node = _project.CreateEvent();
+        AddTask();
+    }
+
+    private void AddTaskGroup()
+    {
+        var node = _project.CreateEvent(EventNodeKind.TaskGroup);
         BindEventList();
-        var idx = _project.Events.FindIndex(x => x.Id == node.Id);
-        if (idx >= 0)
-        {
-            _eventList.SelectedIndex = idx;
-        }
+        SelectEvent(node.Id);
         MarkDirty();
+    }
+
+    private void AddTask()
+    {
+        var node = _project.CreateEvent(EventNodeKind.Task);
+        if (_eventList.SelectedItem is EventNode selected && selected.NodeKind == EventNodeKind.TaskGroup)
+        {
+            node.ParentGroupId = selected.Id;
+        }
+        BindEventList();
+        SelectEvent(node.Id);
+        MarkDirty();
+    }
+
+    private bool SelectEvent(string id)
+    {
+        var idx = _project.Events.FindIndex(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (idx < 0)
+        {
+            return false;
+        }
+        _eventList.SelectedIndex = idx;
+        SyncTaskGridSelection();
+        return true;
     }
 
     private void RemoveSelectedEvent()
@@ -257,7 +418,7 @@ public sealed class MainForm : Form
 
     private void AddTrigger()
     {
-        if (_eventList.SelectedItem is not EventNode evt)
+        if (_eventList.SelectedItem is not EventNode evt || evt.NodeKind == EventNodeKind.TaskGroup)
         {
             return;
         }
@@ -268,7 +429,7 @@ public sealed class MainForm : Form
 
     private void RemoveTrigger()
     {
-        if (_eventList.SelectedItem is not EventNode evt || _triggerGrid.CurrentRow == null)
+        if (_eventList.SelectedItem is not EventNode evt || evt.NodeKind == EventNodeKind.TaskGroup || _triggerGrid.CurrentRow == null)
         {
             return;
         }
@@ -284,7 +445,7 @@ public sealed class MainForm : Form
 
     private void AddAction()
     {
-        if (_eventList.SelectedItem is not EventNode evt)
+        if (_eventList.SelectedItem is not EventNode evt || evt.NodeKind == EventNodeKind.TaskGroup)
         {
             return;
         }
@@ -295,7 +456,7 @@ public sealed class MainForm : Form
 
     private void RemoveAction()
     {
-        if (_eventList.SelectedItem is not EventNode evt || _actionGrid.CurrentRow == null)
+        if (_eventList.SelectedItem is not EventNode evt || evt.NodeKind == EventNodeKind.TaskGroup || _actionGrid.CurrentRow == null)
         {
             return;
         }
@@ -328,7 +489,7 @@ public sealed class MainForm : Form
         using var dlg = new OpenFileDialog
         {
             Filter = "Event Project (*.events.json)|*.events.json|JSON (*.json)|*.json|All Files (*.*)|*.*",
-            Title = "打开事件工程"
+            Title = "Open Event Project"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK)
         {
@@ -353,7 +514,7 @@ public sealed class MainForm : Form
         using var dlg = new SaveFileDialog
         {
             Filter = "Event Project (*.events.json)|*.events.json|JSON (*.json)|*.json|All Files (*.*)|*.*",
-            Title = "保存事件工程",
+            Title = "Save Event Project",
             FileName = $"{_project.Name.Replace(' ', '_')}.events.json"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK)
@@ -373,7 +534,7 @@ public sealed class MainForm : Form
         _currentPath = path;
         _dirty = false;
         UpdateTitle();
-        UpdateStatus("已保存");
+        UpdateStatus("Saved");
     }
 
     private void ExportRuntimeGraph()
@@ -385,7 +546,7 @@ public sealed class MainForm : Form
         using var dlg = new SaveFileDialog
         {
             Filter = "Runtime Event Graph (*.runtime.events.json)|*.runtime.events.json|JSON (*.json)|*.json",
-            Title = "导出运行时图",
+            Title = "Export Runtime Graph",
             FileName = $"{_project.Name.Replace(' ', '_')}.runtime.events.json"
         };
         if (dlg.ShowDialog(this) != DialogResult.OK)
@@ -395,7 +556,7 @@ public sealed class MainForm : Form
         var graph = EventProjectStore.BuildRuntimeGraph(_project);
         var json = JsonSerializer.Serialize(graph, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         File.WriteAllText(dlg.FileName, json);
-        UpdateStatus("已导出运行时图");
+        UpdateStatus("Exported runtime graph");
     }
 
     private bool ValidateBeforeSaveOrExport()
@@ -410,12 +571,12 @@ public sealed class MainForm : Form
 
         if (errors.Count > 0)
         {
-            ShowValidationResult(issues, "校验失败：存在错误，已阻止保存/导出。");
+            ShowValidationResult(issues, "Validation failed: errors block save/export.");
             return false;
         }
 
-        var msg = BuildValidationText(issues, "校验通过：仅包含警告。是否继续保存/导出？");
-        var result = MessageBox.Show(msg, "项目校验", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+        var msg = BuildValidationText(issues, "Validation passed with warnings. Continue save/export?");
+        var result = MessageBox.Show(msg, "Project Validation", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
         return result == DialogResult.Yes;
     }
 
@@ -424,17 +585,17 @@ public sealed class MainForm : Form
         var issues = EventProjectStore.ValidateProject(_project);
         if (issues.Count == 0)
         {
-            MessageBox.Show("校验通过：未发现问题。", "项目校验", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show("Validation passed: no issues found.", "Project Validation", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        ShowValidationResult(issues, "发现以下问题：");
+        ShowValidationResult(issues, "Validation issues:");
     }
 
     private void ShowValidationResult(List<ValidationIssue> issues, string title)
     {
         var msg = BuildValidationText(issues, title);
         var icon = issues.Any(x => x.Severity == ValidationSeverity.Error) ? MessageBoxIcon.Error : MessageBoxIcon.Warning;
-        MessageBox.Show(msg, "项目校验", MessageBoxButtons.OK, icon);
+        MessageBox.Show(msg, "Project Validation", MessageBoxButtons.OK, icon);
     }
 
     private static string BuildValidationText(List<ValidationIssue> issues, string title)
@@ -448,7 +609,7 @@ public sealed class MainForm : Form
 
         if (issues.Count > 20)
         {
-            lines.Add($"... 其余 {issues.Count - 20} 条问题已省略");
+            lines.Add($"... {issues.Count - 20} more issues omitted");
         }
 
         return string.Join(Environment.NewLine, lines);
@@ -460,7 +621,7 @@ public sealed class MainForm : Form
         {
             return true;
         }
-        var result = MessageBox.Show("当前修改尚未保存，是否先保存？", "提示", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+        var result = MessageBox.Show("Current changes are not saved. Save now?", "Unsaved Changes", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
         if (result == DialogResult.Cancel)
         {
             return false;
@@ -482,18 +643,19 @@ public sealed class MainForm : Form
 
     private void UpdateTitle()
     {
-        var fileName = string.IsNullOrWhiteSpace(_currentPath) ? "未命名.events.json" : Path.GetFileName(_currentPath);
-        Text = $"{(_dirty ? "*" : "")}事件编辑器 - {fileName}";
+        var fileName = string.IsNullOrWhiteSpace(_currentPath) ? "Untitled.events.json" : Path.GetFileName(_currentPath);
+        Text = $"{(_dirty ? "*" : "")}EventStudio - {fileName}";
     }
 
     private void UpdateStatus(string? text = null)
     {
-        var total = _project.Events.Count;
-        var triggers = _project.Events.Sum(x => x.Triggers.Count);
-        var actions = _project.Events.Sum(x => x.Actions.Count);
+        var groups = _project.Events.Count(x => x.NodeKind == EventNodeKind.TaskGroup);
+        var tasks = _project.Events.Count(x => x.NodeKind != EventNodeKind.TaskGroup);
+        var triggers = _project.Events.Where(x => x.NodeKind != EventNodeKind.TaskGroup).Sum(x => x.Triggers.Count);
+        var actions = _project.Events.Where(x => x.NodeKind != EventNodeKind.TaskGroup).Sum(x => x.Actions.Count);
         _statusText.Text = string.IsNullOrWhiteSpace(text)
-            ? $"事件 {total} | 触发器 {triggers} | 动作 {actions} | StartEvent: {_project.StartEventId}"
-            : $"{text} | 事件 {total} | 触发器 {triggers} | 动作 {actions}";
+            ? $"Tasks {tasks} | Groups {groups} | Triggers {triggers} | Actions {actions} | StartEvent: {_project.StartEventId}"
+            : $"{text} | Tasks {tasks} | Groups {groups} | Triggers {triggers} | Actions {actions}";
     }
 
     private void InitializeReplayInputs()
@@ -507,7 +669,11 @@ public sealed class MainForm : Form
     private void ResetProject()
     {
         _project = new EventProject();
-        _project.CreateEvent();
+        var group = _project.CreateEvent(EventNodeKind.TaskGroup);
+        group.Title = "Main Quest";
+        var task = _project.CreateEvent(EventNodeKind.Task);
+        task.Title = "New Task";
+        task.ParentGroupId = group.Id;
         _currentPath = null;
         _dirty = false;
         BindProject();
@@ -519,12 +685,47 @@ public sealed class MainForm : Form
         _project = EventProjectStore.Load(path);
         if (_project.Events.Count == 0)
         {
-            _project.CreateEvent();
+            _project.CreateEvent(EventNodeKind.Task);
         }
         _currentPath = path;
         _dirty = false;
         BindProject();
         UpdateTitle();
+    }
+
+    private void TryOpenDefaultSample()
+    {
+        var samplePath = FindDefaultSamplePath();
+        if (string.IsNullOrWhiteSpace(samplePath))
+        {
+            return;
+        }
+
+        try
+        {
+            OpenProjectFromPath(samplePath);
+            _dirty = false;
+            UpdateStatus("Loaded sample data for editing");
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus("Sample load skipped: " + ex.Message);
+        }
+    }
+
+    private static string? FindDefaultSamplePath()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        var candidates = new[]
+        {
+            Path.Combine(baseDir, "story1_map1_story2_map2_story3_demo.events.json"),
+            Path.Combine(baseDir, "story1_map1_story2_demo.events.json"),
+            Path.Combine(baseDir, "start_game_flow.events.json"),
+            Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "GodotTools", "EventStudio", "Samples", "story1_map1_story2.events.json")),
+            Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "GodotTools", "EventStudio", "Samples", "prologue_flow.events.json"))
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private bool ExportRuntimeGraphToPath(string path, out string message)
@@ -1183,4 +1384,18 @@ public sealed class MainForm : Form
         _virtualCursor?.Close();
         base.OnFormClosing(e);
     }
+}
+
+internal sealed class TaskRow
+{
+    public string Id { get; set; } = "";
+    public string Kind { get; set; } = "";
+    public string Group { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string InteractionObjectId { get; set; } = "";
+    public string State { get; set; } = "";
+    public string CompletionItem { get; set; } = "";
+    public bool Enabled { get; set; }
+    public int TriggerCount { get; set; }
+    public int ActionCount { get; set; }
 }

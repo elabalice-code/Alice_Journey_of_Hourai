@@ -10,15 +10,18 @@ public sealed class EventProject
     public List<EventNode> Events { get; set; } = [];
     public Dictionary<string, string> GlobalVariables { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public EventNode CreateEvent()
+    public EventNode CreateEvent(EventNodeKind nodeKind = EventNodeKind.Task)
     {
+        var isGroup = nodeKind == EventNodeKind.TaskGroup;
         var node = new EventNode
         {
             Id = $"evt_{Guid.NewGuid():N}"[..12],
-            Title = $"Event {Events.Count + 1}"
+            Title = isGroup ? $"Task Group {Events.Count + 1}" : $"Task {Events.Count + 1}",
+            NodeKind = nodeKind,
+            Domain = isGroup ? EventDomain.Meta : EventDomain.Story
         };
         Events.Add(node);
-        if (string.IsNullOrWhiteSpace(StartEventId))
+        if (!isGroup && string.IsNullOrWhiteSpace(StartEventId))
         {
             StartEventId = node.Id;
         }
@@ -30,9 +33,16 @@ public sealed class EventProject
 
 public sealed class EventNode
 {
+    public EventNodeKind NodeKind { get; set; } = EventNodeKind.Task;
+    public string ParentGroupId { get; set; } = "";
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public EventDomain Domain { get; set; } = EventDomain.Story;
+    public string InteractionObjectId { get; set; } = "";
+    public string StateKey { get; set; } = "";
+    public string StateValueOnActivate { get; set; } = "active";
+    public string CompletionItemId { get; set; } = "";
+    public int CompletionItemCount { get; set; } = 1;
     public string MapScope { get; set; } = "";
     public string DialogueScope { get; set; } = "";
     public string CombatScope { get; set; } = "";
@@ -43,6 +53,13 @@ public sealed class EventNode
     public List<TriggerRule> Triggers { get; set; } = [];
     public List<DispatchAction> Actions { get; set; } = [];
     public string Notes { get; set; } = "";
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EventNodeKind
+{
+    Task,
+    TaskGroup
 }
 
 public sealed class TriggerRule
