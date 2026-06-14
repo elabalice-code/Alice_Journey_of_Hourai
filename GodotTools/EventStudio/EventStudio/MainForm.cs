@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text.Json;
 using EventStudio.IO;
+using EventStudio.Logging;
 using EventStudio.Models;
 using EventStudio.Replay;
 
@@ -46,6 +48,7 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "事件编辑器";
+        EventStudioLog.Info("MainForm constructing.");
         StartPosition = FormStartPosition.CenterScreen;
         Width = 1400;
         Height = 900;
@@ -56,6 +59,7 @@ public sealed class MainForm : Form
         InitializeReplayInputs();
         TryOpenDefaultSample();
         UpdateTitle();
+        EventStudioLog.Info("MainForm constructed. Log: " + EventStudioLog.CurrentLogPath);
     }
 
     private void BuildMenu()
@@ -97,6 +101,8 @@ public sealed class MainForm : Form
         _fileMenu.DropDownItems.Add("Save As...", null, (_, _) => SaveProjectAs());
         _fileMenu.DropDownItems.Add(new ToolStripSeparator());
         _fileMenu.DropDownItems.Add("Export Runtime Graph...", null, (_, _) => ExportRuntimeGraph());
+        _fileMenu.DropDownItems.Add(new ToolStripSeparator());
+        _fileMenu.DropDownItems.Add("Open Logs Folder", null, (_, _) => OpenLogsFolder());
         _fileMenu.DropDownItems.Add(new ToolStripSeparator());
         _fileMenu.DropDownItems.Add("Exit", null, (_, _) => Close());
 
@@ -614,6 +620,7 @@ public sealed class MainForm : Form
         }
 
         evt.ParentGroupId = targetGroupId;
+        EventStudioLog.Info($"Move event '{eventId}' to group '{targetGroupId}'.");
         _currentGroupId = string.IsNullOrWhiteSpace(targetGroupId) ? UngroupedId : targetGroupId;
         BindEventList();
         SelectEvent(evt.Id);
@@ -635,6 +642,7 @@ public sealed class MainForm : Form
         }
 
         group.ParentGroupId = targetGroupId;
+        EventStudioLog.Info($"Move group '{groupId}' to parent group '{targetGroupId}'.");
         _currentGroupId = group.Id;
         BindEventList();
         SelectGroup(group.Id);
@@ -706,6 +714,7 @@ public sealed class MainForm : Form
     {
         var node = _project.CreateEvent(EventNodeKind.TaskGroup);
         node.ParentGroupId = IsRealGroupId(_currentGroupId) ? _currentGroupId : "";
+        EventStudioLog.Info($"Add event group '{node.Id}' under '{node.ParentGroupId}'.");
         BindEventList();
         SelectGroup(node.Id);
         MarkDirty();
@@ -716,6 +725,7 @@ public sealed class MainForm : Form
         var node = _project.CreateEvent(EventNodeKind.Task);
         node.ParentGroupId = IsRealGroupId(_currentGroupId) ? _currentGroupId : "";
         InitializeNewEvent(node);
+        EventStudioLog.Info($"Add event '{node.Id}' under '{node.ParentGroupId}'.");
         BindEventList();
         SelectEvent(node.Id);
         MarkDirty();
@@ -786,6 +796,7 @@ public sealed class MainForm : Form
     {
         if (_eventList.SelectedItem is not EventNode evt)
         {
+            EventStudioLog.Warning("Remove selected event requested with no selected event.");
             return false;
         }
 
@@ -800,6 +811,7 @@ public sealed class MainForm : Form
         }
 
         var fallbackGroupId = evt.NodeKind == EventNodeKind.TaskGroup ? evt.ParentGroupId : "";
+        EventStudioLog.Info($"Delete {evt.NodeKind} '{evt.Id}' fallbackGroup='{fallbackGroupId}'.");
         if (evt.NodeKind == EventNodeKind.TaskGroup)
         {
             foreach (var child in _project.Events.Where(x => string.Equals(x.ParentGroupId, evt.Id, StringComparison.OrdinalIgnoreCase)))
@@ -884,12 +896,32 @@ public sealed class MainForm : Form
         MarkDirty();
     }
 
+    private void OpenLogsFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(EventStudioLog.CurrentLogPath) ?? AppContext.BaseDirectory);
+            EventStudioLog.Info("Open logs folder requested.");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = Path.GetDirectoryName(EventStudioLog.CurrentLogPath) ?? AppContext.BaseDirectory,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            EventStudioLog.Error("Open logs folder failed.", ex);
+            MessageBox.Show("Could not open logs folder. Log path:" + Environment.NewLine + EventStudioLog.CurrentLogPath, "EventStudio Logs", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
     private void NewProject()
     {
         if (!ConfirmSaveBeforeLoss())
         {
             return;
         }
+        EventStudioLog.Info("New project requested.");
         ResetProject();
     }
 
@@ -910,6 +942,7 @@ public sealed class MainForm : Form
             return;
         }
 
+        EventStudioLog.Info("Open project requested: " + dlg.FileName);
         OpenProjectFromPath(dlg.FileName);
     }
 
@@ -940,8 +973,10 @@ public sealed class MainForm : Form
 
     private void Persist(string path)
     {
+        EventStudioLog.Info("Save project requested: " + path);
         if (!ValidateBeforeSaveOrExport())
         {
+            EventStudioLog.Warning("Save project blocked by validation: " + path);
             return;
         }
         EventProjectStore.Save(path, _project);
@@ -970,6 +1005,7 @@ public sealed class MainForm : Form
         var graph = EventProjectStore.BuildRuntimeGraph(_project);
         var json = JsonSerializer.Serialize(graph, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         File.WriteAllText(dlg.FileName, json);
+        EventStudioLog.Info("Export runtime graph: " + dlg.FileName);
         UpdateStatus("Exported runtime graph");
     }
 
@@ -1098,6 +1134,7 @@ public sealed class MainForm : Form
 
     private void OpenProjectFromPath(string path)
     {
+        EventStudioLog.Info("Loading project: " + path);
         _project = EventProjectStore.Load(path);
         if (_project.Events.Count == 0)
         {
@@ -1108,6 +1145,7 @@ public sealed class MainForm : Form
         _dirty = false;
         BindProject();
         UpdateTitle();
+        EventStudioLog.Info($"Loaded project '{_project.Name}' events={_project.Events.Count} path={path}");
     }
 
     private void TryOpenDefaultSample()
@@ -1115,17 +1153,20 @@ public sealed class MainForm : Form
         var samplePath = FindDefaultSamplePath();
         if (string.IsNullOrWhiteSpace(samplePath))
         {
+            EventStudioLog.Info("No default sample found.");
             return;
         }
 
         try
         {
+            EventStudioLog.Info("Try load default sample: " + samplePath);
             OpenProjectFromPath(samplePath);
             _dirty = false;
             UpdateStatus("Loaded sample data for editing");
         }
         catch (Exception ex)
         {
+            EventStudioLog.Error("Default sample load failed: " + samplePath, ex);
             UpdateStatus("Sample load skipped: " + ex.Message);
         }
     }
@@ -1147,16 +1188,19 @@ public sealed class MainForm : Form
 
     private bool ExportRuntimeGraphToPath(string path, out string message)
     {
+        EventStudioLog.Info("Export runtime graph requested: " + path);
         if (!ValidateBeforeSaveOrExport())
         {
-            message = "校验失败，导出已中止。";
+            message = "Validation failed; export cancelled.";
+            EventStudioLog.Warning("Export runtime graph blocked by validation: " + path);
             return false;
         }
         var graph = EventProjectStore.BuildRuntimeGraph(_project);
         var json = JsonSerializer.Serialize(graph, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
         File.WriteAllText(path, json);
-        UpdateStatus("已导出运行时图");
-        message = $"已导出: {path}";
+        UpdateStatus("Exported runtime graph");
+        message = $"Exported {path}";
+        EventStudioLog.Info("Export runtime graph completed: " + path);
         return true;
     }
 
@@ -1174,7 +1218,8 @@ public sealed class MainForm : Form
         }
         _replayCts = new CancellationTokenSource();
         _replayTask = Task.Run(() => ReplayLoopAsync(_replayCts.Token));
-        UpdateStatus($"Replayer已监听: {ReplayBridge.PipeName}");
+        EventStudioLog.Info("Replay bridge listening: " + ReplayBridge.PipeName);
+        UpdateStatus($"Replay bridge listening: {ReplayBridge.PipeName}");
     }
 
     private async Task ReplayLoopAsync(CancellationToken ct)
@@ -1195,8 +1240,9 @@ public sealed class MainForm : Form
             {
                 break;
             }
-            catch
+            catch (Exception ex)
             {
+                EventStudioLog.Error("Replay loop iteration failed.", ex);
             }
         }
     }
@@ -1215,18 +1261,21 @@ public sealed class MainForm : Form
                 }
                 catch (Exception ex)
                 {
+                    EventStudioLog.Error("Replay request failed on UI thread.", ex);
                     tcs.TrySetResult(ReplayFail(ex.Message));
                 }
             }));
             return await tcs.Task;
         }
 
+        var requestValue = request.Value ?? "";
         var command = request.Command.Trim().ToLowerInvariant();
+        EventStudioLog.Info($"Replay request command='{request.Command}' target='{request.Target}' valueLength={requestValue.Length}");
         return command switch
         {
             "ping" => ReplayOk("alive"),
             "list" or "list-controls" => ReplayOk(string.Join(Environment.NewLine, GetReplayTargets())),
-            "set-text" => await HandleReplaySetTextAsync(request.Target, request.Value, request.DurationMs),
+            "set-text" => await HandleReplaySetTextAsync(request.Target, requestValue, request.DurationMs),
             "click" => await HandleReplayClickAsync(request.Target, request.DurationMs),
             "focus" or "activate" => await HandleReplayFocusAsync(request.Target, request.DurationMs),
             "close-dialog" => ReplayOk("no dialog"),

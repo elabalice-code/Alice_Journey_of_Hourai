@@ -1,36 +1,46 @@
 # EventStudio
 
-## 位置
+EventStudio edits event and quest-flow data for Alice Journey of Hourai.
 
-- 工程：`GodotTools/EventStudio/EventStudio/EventStudio.csproj`
-- 输出：`GodotTools-Build/EventStudio`
+## Paths
 
-## 编译
+- Source project: `GodotTools/EventStudio/EventStudio/EventStudio.csproj`
+- Build output: `GodotTools-Build/EventStudio/net8.0-windows`
+- Interactive executable: `GodotTools-Build/EventStudio/net8.0-windows/EventStudio.exe`
 
-```powershell
-& "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\amd64\MSBuild.exe" `
-  "D:\Task_Panel\0_AliceJOH\0_AOJ_Reference\workspace\Metroidvania-System-master\GodotTools\EventStudio\EventStudio\EventStudio.csproj" `
-  /t:Build /p:Configuration=Release
+## Data
+
+- Editor project files: `*.events.json`
+- Runtime export files: `*.runtime.events.json`
+
+Event groups are display-only folders. Events are the executable files inside those folders. Moving an event or group in the UI changes only folder ownership metadata; event trigger/output logic is kept on the event itself.
+
+## Logs
+
+EventStudio writes timestamped local logs beside the built executable:
+
+```text
+GodotTools-Build/EventStudio/net8.0-windows/logs/EventStudio_yyyyMMdd_HHmmss_fff.log
+GodotTools-Build/EventStudio/net8.0-windows/logs/EventStudio.latest.log
 ```
 
-## 数据文件
+Use `File > Open Logs Folder` in the EventStudio UI to open that folder. Unexpected UI-thread errors, fatal exceptions, Replay bridge errors, project load/save/export actions, and key drag/drop edits are written there with local timestamps.
 
-- 编辑态：`*.events.json`
-- 运行时图：`*.runtime.events.json`
+## Validation
 
-## 校验策略
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools.ps1 run event-studio self-test -NoBuild
+dotnet build .\GodotTools\EventStudio\EventStudio\EventStudio.csproj -c Release
+```
 
-- 保存与导出前自动校验
-- 错误会阻断保存/导出
-- 警告会二次确认后允许继续
+`EventStudio --agent-self-test` verifies:
 
-## 示例
+- event group boundaries;
+- event field JSON roundtrip;
+- runtime state export;
+- event group parent-cycle validation;
+- log file creation.
 
-- 编辑态示例：`GodotTools/EventStudio/Samples/prologue_flow.events.json`
-- 运行时图示例：`GodotTools/EventStudio/Samples/prologue_flow.runtime.events.json`
+## Runtime Boundary
 
-## Godot 运行时接入
-
-- 运行时事件流：`CoreEngine/Scripts/Actor/RuntimeEventFlowActor.gd`
-- 默认读取：`res://GodotTools/EventStudio/Samples/prologue_flow.events.json`
-- 可通过 Workbench 数据键覆盖路径：`runtime_event_project_path`
+EventStudio produces event configuration and runtime event-state data. It does not directly mutate scenes. Runtime systems consume exported state, signals, and event actions to perform scene, dialogue, combat, or inventory effects.

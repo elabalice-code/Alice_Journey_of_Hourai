@@ -1,4 +1,5 @@
 using EventStudio.IO;
+using EventStudio.Logging;
 using EventStudio.Models;
 
 namespace EventStudio;
@@ -13,8 +14,20 @@ internal static class Program
             return RunAgentSelfTest();
         }
 
+        InstallGlobalExceptionLogging();
+        EventStudioLog.Info("EventStudio starting. Args: " + string.Join(" ", args));
+
         ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm());
+        try
+        {
+            Application.Run(new MainForm());
+            EventStudioLog.Info("EventStudio exited normally.");
+        }
+        catch (Exception ex)
+        {
+            EventStudioLog.Error("Fatal exception escaped Application.Run.", ex);
+            throw;
+        }
         return 0;
     }
 
@@ -22,10 +35,49 @@ internal static class Program
         args.Any(x => x.Equals("--agent-self-test", StringComparison.OrdinalIgnoreCase) ||
                       x.Equals("agent-self-test", StringComparison.OrdinalIgnoreCase));
 
+    private static void InstallGlobalExceptionLogging()
+    {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) =>
+        {
+            EventStudioLog.Error("Unhandled UI thread exception.", e.Exception);
+            MessageBox.Show(
+                "EventStudio hit an unexpected error. The details were written to:" + Environment.NewLine + EventStudioLog.CurrentLogPath,
+                "EventStudio Error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex)
+            {
+                EventStudioLog.Error("Unhandled AppDomain exception.", ex);
+            }
+            else
+            {
+                EventStudioLog.Error("Unhandled AppDomain exception object: " + e.ExceptionObject);
+            }
+        };
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            EventStudioLog.Error("Unobserved task exception.", e.Exception);
+            e.SetObserved();
+        };
+    }
+
     private static int RunAgentSelfTest()
     {
         try
         {
+            EventStudioLog.Info("EventStudio agent self-test started.");
+            if (!File.Exists(EventStudioLog.CurrentLogPath))
+            {
+                Console.Error.WriteLine("EventStudio agent self-test failed log file creation.");
+                return 1;
+            }
+
             var project = new EventProject
             {
                 Name = "AgentSelfTest",
@@ -129,10 +181,12 @@ internal static class Program
             }
 
             Console.WriteLine("EventStudio agent self-test OK.");
+            EventStudioLog.Info("EventStudio agent self-test OK.");
             return 0;
         }
         catch (Exception ex)
         {
+            EventStudioLog.Error("EventStudio agent self-test failed.", ex);
             Console.Error.WriteLine("EventStudio agent self-test failed: " + ex.Message);
             return 1;
         }
