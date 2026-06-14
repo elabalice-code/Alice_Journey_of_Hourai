@@ -12,6 +12,8 @@ From the project root:
 .\tools.ps1 map portal-review --summary
 .\tools.ps1 map runtime-verify --summary
 .\tools.ps1 map ux-audit --summary
+.\tools.ps1 map ux-walkthrough --summary --out BuildLogs\map_ux_walkthrough.json
+.\tools.ps1 map ux-review --summary
 .\tools.ps1 map import --summary
 .\tools.ps1 map validate --summary
 .\tools.ps1 run map-editor self-test
@@ -21,6 +23,8 @@ dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release 
 dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- portal-review --godotRoot . --summary
 dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- runtime-verify --godotRoot . --summary
 dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- ux-audit --godotRoot . --summary
+dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- ux-walkthrough --godotRoot . --summary --out BuildLogs\map_ux_walkthrough.json
+dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- ux-review --godotRoot . --summary
 dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- import --godotRoot . --out BuildLogs\map_project.json --summary
 dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- validate --godotRoot . --in BuildLogs\map_project.json --summary
 dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- agent-self-test --godotRoot .
@@ -33,6 +37,8 @@ dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release 
 `runtime-verify` is a read-only static game-effect verifier. It checks that imported portal targets resolve to imported map scenes and that `CoreEngine` runtime scripts expose the expected portal-to-room-loading chain (`Portal.gd` target_map, `TYPE_LOAD_ROOM_REQUEST`, `RoomFlowActor.gd`, and `load_room`). Add `--summary` for a human-readable Testor report. It does not execute a live player transition.
 
 `ux-audit` is a read-only static UX audit. It checks discoverability, feedback, recovery, and Agent mirror surfaces in the MapEditor UI source. Add `--summary` for a human-readable Testor report. It does not replace a human click-through review.
+
+`ux-walkthrough` writes the human live-review checklist. `ux-review` records or verifies the result file and exits nonzero until the UX gate has reviewer, overall result, and per-step pass/partial/fail evidence.
 
 `import` scans the current Godot maps and writes a MapEditor project JSON file. `tools.ps1 map import` defaults to `BuildLogs/map_project.json`; add `--summary` for a concise report with map, link, portal, tile-layer, and entity counts.
 
@@ -48,4 +54,4 @@ dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release 
 dotnet run --project GodotTools\MapEditor\MapEditor\MapEditor.csproj -c Release -- patchpos --godotRoot . --scene res://CoreEngine/Maps/DemoMap.tscn --nodePath SomeNode --x 0 --y 0
 ```
 
-Only `status`, `portal-review`, `runtime-verify`, `ux-audit`, `import`, `validate`, and `agent-self-test` are read-only. Commands such as `patchpos` and `portalanim` can write project files or generated assets.
+Only `status`, `portal-review`, `runtime-verify`, `ux-audit`, `ux-walkthrough`, `ux-review` without `--out`, `import`, `validate`, and `agent-self-test` are read-only. `ux-review --out` writes only the review-result artifact. Commands such as `patchpos` and `portalanim` can write project files or generated assets.

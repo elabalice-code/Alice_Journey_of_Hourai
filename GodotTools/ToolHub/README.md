@@ -25,6 +25,7 @@ From the project root, prefer the short wrapper:
 .\tools.ps1 map runtime-verify --summary
 .\tools.ps1 map ux-audit --summary
 .\tools.ps1 map ux-walkthrough --summary --out BuildLogs\map_ux_walkthrough.json
+.\tools.ps1 map ux-review --summary
 .\tools.ps1 map import --summary
 .\tools.ps1 map validate --summary
 .\tools.ps1 show resource-config
@@ -72,6 +73,7 @@ dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- map
 dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- map runtime-verify --summary --godotRoot .
 dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- map ux-audit --summary --godotRoot .
 dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- map ux-walkthrough --summary --out BuildLogs\map_ux_walkthrough.json --godotRoot .
+dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- map ux-review --summary --godotRoot .
 dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- map import --summary --godotRoot .
 dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- map validate --summary --godotRoot .
 dotnet run --project GodotTools\ToolHub\ToolHub\ToolHub.csproj -c Release -- show resource-config --godotRoot .
@@ -115,6 +117,7 @@ The `map` shortcut is a thin Agent-facing route into MapEditor:
 - `map runtime-verify`: run a read-only static game-effect verifier for the map runtime wiring. It checks imported portal targets, runtime entry rooms, and the `Portal.gd` -> `RoomFlowActor.gd` -> `load_room` consumption chain. Add `--summary` for a concise Testor report while keeping JSON as the default Agent format.
 - `map ux-audit`: run a read-only static UX audit for MapEditor discoverability, feedback, recovery, and Agent mirror surfaces. Add `--summary` for a concise Testor report while keeping JSON as the default Agent format. It is not a substitute for a human click-through review.
 - `map ux-walkthrough`: print a human live-review checklist for MapEditor launch, import, inspect, edit preview, save/review, validation, and recovery flows. Add `--out BuildLogs\map_ux_walkthrough.json` to persist the checklist locally as a review artifact; the command prepares the human click-through, it does not prove the click-through has been completed.
+- `map ux-review`: record or verify the human walkthrough result. By default it reads `BuildLogs\map_ux_review_result.json` and exits nonzero until reviewer, overall result, and per-step results prove the UX gate is accepted. To record a completed pass, provide `--in BuildLogs\map_ux_walkthrough.json --out BuildLogs\map_ux_review_result.json --reviewer <name> --result pass --step-results "launch=pass;import=pass;inspect=pass;edit-preview=pass;save-review=pass;error-recovery=pass;agent-mirror=pass" --summary`.
 - `map import`: scan current Godot maps and write a MapEditor project JSON file. Defaults to `BuildLogs/map_project.json`; add `--summary` for a concise import report.
 - `map validate`: compare a MapEditor project JSON file with a fresh Godot map scan. Defaults to `BuildLogs/map_project.json`; add `--summary` for missing and extra scene path counts.
 

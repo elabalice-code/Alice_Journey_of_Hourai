@@ -553,7 +553,7 @@ internal static class Program
                 Gap = ok && blocking == 0
                     ? "Static MapEditor UX audit is green. A live human click-through is still required before treating interactive UX as fully accepted."
                     : "Current MapEditor UX audit has blocking issues.",
-                VerifyCommand = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-audit --summary -NoBuild",
+                VerifyCommand = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-review --summary -NoBuild",
                 RequiredForMutation = true,
                 FutureMutationRequirement = "Interactive mutating flows need visible labels, status, save/apply feedback, validation feedback, and a recovery path. CLI-only flows need equivalent review/recovery output."
             });
@@ -586,7 +586,7 @@ internal static class Program
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 closure-gates --summary -NoBuild",
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 dump-index --summary -NoBuild",
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map runtime-verify --summary -NoBuild",
-                "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-audit --summary -NoBuild",
+                "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-review --summary -NoBuild",
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 next-actions --summary -NoBuild"
             ]
         };
@@ -1123,8 +1123,17 @@ internal static class Program
                     Area = "map",
                     Severity = "info",
                     Title = "Run MapEditor live UX walkthrough",
-                    Reason = "Static MapEditor UX audit is green; the remaining UX gate needs a human click-through record for import, inspect, edit preview, save/review, validation, and recovery flows.",
+                    Reason = "Static MapEditor UX audit is green; the remaining UX gate needs a human click-through checklist and result record for import, inspect, edit preview, save/review, validation, and recovery flows.",
                     Command = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-walkthrough --summary --out BuildLogs\\map_ux_walkthrough.json -NoBuild"
+                });
+                actions.Add(new ToolNextAction
+                {
+                    Id = "record-map-ux-review-result",
+                    Area = "map",
+                    Severity = "info",
+                    Title = "Record MapEditor UX review result",
+                    Reason = "After the human walkthrough, record reviewer, overall result, and per-step results so Testor can verify whether the interactive UX gate is accepted.",
+                    Command = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-review --summary --in BuildLogs\\map_ux_walkthrough.json --out BuildLogs\\map_ux_review_result.json --reviewer <name> --result pass --step-results \"launch=pass;import=pass;inspect=pass;edit-preview=pass;save-review=pass;error-recovery=pass;agent-mirror=pass\" -NoBuild"
                 });
             }
         }
@@ -1413,6 +1422,10 @@ internal static class Program
                 "Human live UX walkthrough checklist for MapEditor import, inspect, edit preview, save/review, validation, and recovery flows.",
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-walkthrough --summary --out BuildLogs\\map_ux_walkthrough.json -NoBuild",
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-walkthrough --summary -NoBuild"),
+            BuildDumpArtifact(root, "map-ux-review-result", "map", "review", "BuildLogs/map_ux_review_result.json", false,
+                "Human-recorded MapEditor UX walkthrough result with reviewer, overall result, per-step pass/partial/fail state, and remaining issues.",
+                "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-review --summary --in BuildLogs\\map_ux_walkthrough.json --out BuildLogs\\map_ux_review_result.json --reviewer <name> --result pass --step-results \"launch=pass;import=pass;inspect=pass;edit-preview=pass;save-review=pass;error-recovery=pass;agent-mirror=pass\" -NoBuild",
+                "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-review --summary -NoBuild"),
             BuildDumpArtifact(root, "resource-decisions", "resource", "review", "BuildLogs/resource_decisions.json", false,
                 "Human/Agent decision ledger for resource plan actions.",
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 resource decide --id <resource-plan-id> --decision defer --note \"owner review\" -NoBuild",
@@ -2165,9 +2178,9 @@ internal static class Program
             return 0;
         }
 
-        if (commandName is not ("status" or "portal-review" or "runtime-verify" or "ux-audit" or "ux-walkthrough" or "import" or "validate"))
+        if (commandName is not ("status" or "portal-review" or "runtime-verify" or "ux-audit" or "ux-walkthrough" or "ux-review" or "import" or "validate"))
         {
-            Console.Error.WriteLine("map requires: status, portal-review, runtime-verify, ux-audit, ux-walkthrough, import, or validate");
+            Console.Error.WriteLine("map requires: status, portal-review, runtime-verify, ux-audit, ux-walkthrough, ux-review, import, or validate");
             return 1;
         }
 
@@ -2179,6 +2192,10 @@ internal static class Program
         if (commandName == "validate")
         {
             mapArgs = WithDefaultMapValidateArgs(root, mapArgs);
+        }
+        if (commandName == "ux-review")
+        {
+            mapArgs = WithDefaultMapUxReviewArgs(root, mapArgs);
         }
         return RunMapEditorCommand(root, manifest, mapArgs);
     }
@@ -2201,6 +2218,16 @@ internal static class Program
         }
 
         return args.Concat(["--in", Path.Combine(root, "BuildLogs", "map_project.json")]).ToArray();
+    }
+
+    private static string[] WithDefaultMapUxReviewArgs(string root, string[] args)
+    {
+        var result = new List<string>(args);
+        if (!HasOption(result, "in"))
+        {
+            result.AddRange(["--in", Path.Combine(root, "BuildLogs", "map_ux_review_result.json")]);
+        }
+        return result.ToArray();
     }
 
     private static int RunMapEditorCommand(string root, ToolManifest manifest, string[] mapArgs)
@@ -2412,11 +2439,11 @@ internal static class Program
                 BuildInlineHandoffSection("toolhub-status", "ToolHub status", status),
                 BuildInlineHandoffSection("dump-index", "ToolHub dump index", new
                 {
-                    artifactCount = 12,
-                    existingCount = 11,
+                    artifactCount = 14,
+                    existingCount = 13,
                     missingRequiredCount = 0,
                     canonicalCount = 2,
-                    reviewCount = 5
+                    reviewCount = 7
                 }),
                 BuildInlineHandoffSection("map-portal-review", "MapEditor portal review", new
                 {
@@ -2445,7 +2472,7 @@ internal static class Program
         if (!summary.Contains("ToolHub handoff summary", StringComparison.Ordinal) ||
             !summary.Contains("Overall: OK", StringComparison.Ordinal) ||
             !summary.Contains("ToolHub: tools=1 manifestIssues=0", StringComparison.Ordinal) ||
-            !summary.Contains("DumpIndex: artifacts=12 existing=11 requiredMissing=0 canonical=2 review=5", StringComparison.Ordinal) ||
+            !summary.Contains("DumpIndex: artifacts=14 existing=13 requiredMissing=0 canonical=2 review=7", StringComparison.Ordinal) ||
             !summary.Contains("PortalReview: mapsWithoutPortals=2 portalsWithMissingTargets=0", StringComparison.Ordinal) ||
             !summary.Contains("RuntimeVerify: ok=true issues=0 portalTargets=16/16 entryRooms=6/6 checks=9", StringComparison.Ordinal) ||
             !summary.Contains("UxAudit: ok=true blocking=0 warnings=0 checks=17", StringComparison.Ordinal))
@@ -3240,6 +3267,7 @@ internal static class Program
         Console.WriteLine("  map runtime-verify --godotRoot <dir> [--summary]");
         Console.WriteLine("  map ux-audit --godotRoot <dir> [--summary]");
         Console.WriteLine("  map ux-walkthrough --godotRoot <dir> [--out <file>] [--summary]");
+        Console.WriteLine("  map ux-review --godotRoot <dir> [--in <file>] [--out <file>] [--reviewer <name>] [--result pass|partial|fail|pending] [--step-results <id=pass;id=fail>] [--summary]");
         Console.WriteLine("  map import --godotRoot <dir> [--out <file>] [--summary]");
         Console.WriteLine("  map validate --godotRoot <dir> [--in <file>] [--summary]");
         Console.WriteLine("  resource refresh --godotRoot <dir>");
@@ -3283,6 +3311,7 @@ internal static class Program
         Console.WriteLine("  map runtime-verify --godotRoot <dir> [--summary]");
         Console.WriteLine("  map ux-audit --godotRoot <dir> [--summary]");
         Console.WriteLine("  map ux-walkthrough --godotRoot <dir> [--out <file>] [--summary]");
+        Console.WriteLine("  map ux-review --godotRoot <dir> [--in <file>] [--out <file>] [--reviewer <name>] [--result pass|partial|fail|pending] [--step-results <id=pass;id=fail>] [--summary]");
         Console.WriteLine("  map import --godotRoot <dir> [--out <file>] [--summary]");
         Console.WriteLine("  map validate --godotRoot <dir> [--in <file>] [--summary]");
     }

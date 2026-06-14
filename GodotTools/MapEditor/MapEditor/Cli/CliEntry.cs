@@ -25,6 +25,7 @@ public static class CliEntry
                 "runtime-verify" => RunRuntimeVerify(opts),
                 "ux-audit" => RunUxAudit(opts),
                 "ux-walkthrough" => RunUxWalkthrough(opts),
+                "ux-review" => RunUxReview(opts),
                 "import" => RunImport(opts),
                 "validate" => RunValidate(opts),
                 "patchpos" => RunPatchPos(opts),
@@ -50,6 +51,7 @@ public static class CliEntry
         Console.WriteLine("  MapEditor.exe runtime-verify --godotRoot <dir> [--summary]");
         Console.WriteLine("  MapEditor.exe ux-audit --godotRoot <dir> [--summary]");
         Console.WriteLine("  MapEditor.exe ux-walkthrough --godotRoot <dir> [--out <file>] [--summary]");
+        Console.WriteLine("  MapEditor.exe ux-review --godotRoot <dir> [--in <file>] [--out <file>] [--reviewer <name>] [--result pass|partial|fail|pending] [--step-results <id=pass;id=fail>] [--notes <text>] [--summary]");
         Console.WriteLine("  MapEditor.exe import --godotRoot <dir> --out <file> [--summary]");
         Console.WriteLine("  MapEditor.exe validate --godotRoot <dir> --in <file> [--summary]");
         Console.WriteLine("  MapEditor.exe patchpos --godotRoot <dir> --scene <res://...> --nodePath <path> --x <num> --y <num>");
@@ -169,6 +171,33 @@ public static class CliEntry
         else
             Console.WriteLine(JsonSerializer.Serialize(report, JsonOptions.Default));
         return report.ProjectFileExists && report.StaticAuditOk ? 0 : 1;
+    }
+
+    private static int RunUxReview(Dictionary<string, string> opts)
+    {
+        var godotRoot = opts.GetValueOrDefault("godotRoot", "");
+        if (string.IsNullOrWhiteSpace(godotRoot))
+            godotRoot = GodotProjectLocator.FindGodotRoot(Environment.CurrentDirectory);
+
+        var input = opts.GetValueOrDefault("in", Path.Combine("BuildLogs", "map_ux_review_result.json"));
+        var output = opts.GetValueOrDefault("out", "");
+        var report = BuildUxReviewResult(godotRoot, input, opts);
+
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            report.OutputPath = output;
+            report.OutputWritten = true;
+            var absoluteOutput = Path.IsPathRooted(output) ? output : Path.Combine(godotRoot, output);
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(absoluteOutput)) ?? ".");
+            File.WriteAllText(absoluteOutput, JsonSerializer.Serialize(report, JsonOptions.Default));
+        }
+
+        if (opts.ContainsKey("summary"))
+            Console.WriteLine(FormatUxReviewSummary(report));
+        else
+            Console.WriteLine(JsonSerializer.Serialize(report, JsonOptions.Default));
+
+        return report.Ok ? 0 : 1;
     }
 
     private static string FormatStatusSummary(MapEditorStatus status)
@@ -421,6 +450,213 @@ public static class CliEntry
         foreach (var command in report.FollowUpCommands)
             lines.Add("  " + command);
 
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static MapUxReviewResult BuildUxReviewResult(string godotRoot, string input, Dictionary<string, string> opts)
+    {
+        godotRoot = Path.GetFullPath(godotRoot);
+        var absoluteInput = Path.IsPathRooted(input) ? input : Path.Combine(godotRoot, input);
+        var hasReviewInput = File.Exists(absoluteInput) && LooksLikeUxReviewResult(absoluteInput);
+        if (hasReviewInput && !HasNewUxReviewInput(opts))
+        {
+            var existing = JsonSerializer.Deserialize<MapUxReviewResult>(File.ReadAllText(absoluteInput), JsonOptions.Default)
+                ?? throw new InvalidDataException("Failed to parse UX review result JSON.");
+            RecomputeUxReviewResult(existing);
+            existing.ProjectRoot = godotRoot;
+            existing.InputPath = input;
+            return existing;
+        }
+
+        var walkthrough = File.Exists(absoluteInput) && !hasReviewInput
+            ? JsonSerializer.Deserialize<MapUxWalkthroughReport>(File.ReadAllText(absoluteInput), JsonOptions.Default)
+            : BuildUxWalkthroughReport(godotRoot);
+        if (walkthrough == null)
+            throw new InvalidDataException("Failed to parse UX walkthrough JSON.");
+
+        var stepResults = ParseStepResults(opts.GetValueOrDefault("step-results", ""));
+        var defaultResult = NormalizeUxResult(opts.GetValueOrDefault("result", "pending"));
+        var reviewer = opts.GetValueOrDefault("reviewer", "");
+        var notes = opts.GetValueOrDefault("notes", "");
+        var reviewedAt = opts.GetValueOrDefault("reviewed-at", DateTimeOffset.UtcNow.ToString("O"));
+
+        var steps = walkthrough.Steps
+            .OrderBy(x => x.Order)
+            .Select(step =>
+            {
+                var result = stepResults.TryGetValue(step.Id, out var explicitResult) ? explicitResult : defaultResult;
+                return new MapUxReviewStepResult
+                {
+                    Order = step.Order,
+                    Id = step.Id,
+                    ExpectedResult = step.ExpectedResult,
+                    Result = result,
+                    Passed = result.Equals("pass", StringComparison.OrdinalIgnoreCase),
+                    Notes = step.Notes,
+                    AgentMirrorCommand = step.AgentMirrorCommand
+                };
+            })
+            .ToList();
+
+        var passed = steps.Count(x => x.Result.Equals("pass", StringComparison.OrdinalIgnoreCase));
+        var failed = steps.Count(x => x.Result.Equals("fail", StringComparison.OrdinalIgnoreCase));
+        var partial = steps.Count(x => x.Result.Equals("partial", StringComparison.OrdinalIgnoreCase));
+        var pending = steps.Count(x => x.Result.Equals("pending", StringComparison.OrdinalIgnoreCase));
+        var reviewerProvided = !string.IsNullOrWhiteSpace(reviewer);
+        var overall = NormalizeUxResult(defaultResult);
+        var complete = steps.Count > 0 && pending == 0 && reviewerProvided && !overall.Equals("pending", StringComparison.OrdinalIgnoreCase);
+        var ok = complete && failed == 0 && partial == 0 && steps.All(x => x.Passed) && overall.Equals("pass", StringComparison.OrdinalIgnoreCase);
+
+        var issues = new List<string>();
+        if (!reviewerProvided)
+            issues.Add("Missing --reviewer.");
+        if (overall.Equals("pending", StringComparison.OrdinalIgnoreCase))
+            issues.Add("Overall --result is pending.");
+        if (pending > 0)
+            issues.Add($"{pending} UX walkthrough step(s) are still pending.");
+        if (partial > 0)
+            issues.Add($"{partial} UX walkthrough step(s) are marked partial.");
+        if (failed > 0)
+            issues.Add($"{failed} UX walkthrough step(s) are marked fail.");
+        if (!walkthrough.ProjectFileExists)
+            issues.Add("Project file was missing when the walkthrough was generated.");
+        if (!walkthrough.StaticAuditOk)
+            issues.Add("Static UX audit is not OK.");
+
+        return new MapUxReviewResult
+        {
+            ProjectRoot = godotRoot,
+            GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+            ReviewKind = "human-live-ux-result",
+            InputPath = input,
+            Reviewer = reviewer,
+            ReviewedAtUtc = reviewedAt,
+            OverallResult = overall,
+            Notes = notes,
+            ProjectFileExists = walkthrough.ProjectFileExists,
+            StaticAuditOk = walkthrough.StaticAuditOk,
+            StepCount = steps.Count,
+            PassedStepCount = passed,
+            PartialStepCount = partial,
+            FailedStepCount = failed,
+            PendingStepCount = pending,
+            Complete = complete,
+            Ok = ok,
+            IssueCount = issues.Count,
+            Issues = issues,
+            Steps = steps,
+            VerificationCommand = ".\\tools.ps1 map ux-review --summary --in BuildLogs\\map_ux_walkthrough.json --out BuildLogs\\map_ux_review_result.json --reviewer <name> --result pass --step-results \"launch=pass;import=pass;inspect=pass;edit-preview=pass;save-review=pass;error-recovery=pass;agent-mirror=pass\" -NoBuild"
+        };
+    }
+
+    private static bool HasNewUxReviewInput(Dictionary<string, string> opts) =>
+        opts.ContainsKey("reviewer") ||
+        opts.ContainsKey("result") ||
+        opts.ContainsKey("step-results") ||
+        opts.ContainsKey("notes") ||
+        opts.ContainsKey("reviewed-at");
+
+    private static bool LooksLikeUxReviewResult(string path)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.TryGetProperty("reviewKind", out _);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void RecomputeUxReviewResult(MapUxReviewResult report)
+    {
+        foreach (var step in report.Steps)
+        {
+            step.Result = NormalizeUxResult(step.Result);
+            step.Passed = step.Result.Equals("pass", StringComparison.OrdinalIgnoreCase);
+        }
+
+        report.StepCount = report.Steps.Count;
+        report.PassedStepCount = report.Steps.Count(x => x.Result.Equals("pass", StringComparison.OrdinalIgnoreCase));
+        report.PartialStepCount = report.Steps.Count(x => x.Result.Equals("partial", StringComparison.OrdinalIgnoreCase));
+        report.FailedStepCount = report.Steps.Count(x => x.Result.Equals("fail", StringComparison.OrdinalIgnoreCase));
+        report.PendingStepCount = report.Steps.Count(x => x.Result.Equals("pending", StringComparison.OrdinalIgnoreCase));
+        report.OverallResult = NormalizeUxResult(report.OverallResult);
+        report.Complete = report.StepCount > 0 &&
+            report.PendingStepCount == 0 &&
+            !string.IsNullOrWhiteSpace(report.Reviewer) &&
+            !report.OverallResult.Equals("pending", StringComparison.OrdinalIgnoreCase);
+        report.Ok = report.Complete &&
+            report.FailedStepCount == 0 &&
+            report.PartialStepCount == 0 &&
+            report.Steps.All(x => x.Passed) &&
+            report.OverallResult.Equals("pass", StringComparison.OrdinalIgnoreCase);
+
+        var issues = new List<string>();
+        if (string.IsNullOrWhiteSpace(report.Reviewer))
+            issues.Add("Missing reviewer.");
+        if (report.OverallResult.Equals("pending", StringComparison.OrdinalIgnoreCase))
+            issues.Add("Overall result is pending.");
+        if (report.PendingStepCount > 0)
+            issues.Add($"{report.PendingStepCount} UX walkthrough step(s) are still pending.");
+        if (report.PartialStepCount > 0)
+            issues.Add($"{report.PartialStepCount} UX walkthrough step(s) are marked partial.");
+        if (report.FailedStepCount > 0)
+            issues.Add($"{report.FailedStepCount} UX walkthrough step(s) are marked fail.");
+        report.Issues = issues;
+        report.IssueCount = issues.Count;
+    }
+
+    private static Dictionary<string, string> ParseStepResults(string raw)
+    {
+        var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(raw))
+            return results;
+
+        foreach (var part in raw.Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var pieces = part.Split('=', 2, StringSplitOptions.TrimEntries);
+            if (pieces.Length != 2 || string.IsNullOrWhiteSpace(pieces[0]))
+                continue;
+            results[pieces[0]] = NormalizeUxResult(pieces[1]);
+        }
+        return results;
+    }
+
+    private static string NormalizeUxResult(string value)
+    {
+        var normalized = (value ?? "").Trim().ToLowerInvariant();
+        return normalized is "pass" or "partial" or "fail" or "pending" ? normalized : "pending";
+    }
+
+    private static string FormatUxReviewSummary(MapUxReviewResult report)
+    {
+        var lines = new List<string>
+        {
+            "MapEditor UX review result",
+            $"Project: {report.ProjectRoot}",
+            $"Generated UTC: {report.GeneratedAtUtc}",
+            $"Kind: {report.ReviewKind}",
+            $"Input: {report.InputPath}",
+            $"Output: {report.OutputPath}",
+            $"Reviewer: {(string.IsNullOrWhiteSpace(report.Reviewer) ? "missing" : report.Reviewer)}",
+            $"Overall: {(report.Ok ? "OK" : "NOT ACCEPTED")} result={report.OverallResult} complete={report.Complete.ToString().ToLowerInvariant()} issues={report.IssueCount}",
+            $"Counts: steps={report.StepCount} pass={report.PassedStepCount} partial={report.PartialStepCount} fail={report.FailedStepCount} pending={report.PendingStepCount}",
+            $"Static audit: {(report.StaticAuditOk ? "OK" : "FAILED")} projectFile={(report.ProjectFileExists ? "ok" : "missing")}"
+        };
+
+        AddSummaryList(lines, "Issues", report.Issues);
+        lines.Add("Steps:");
+        foreach (var step in report.Steps.OrderBy(x => x.Order))
+        {
+            lines.Add($"  {step.Order}. {step.Id}: {step.Result}");
+            lines.Add($"     expect: {step.ExpectedResult}");
+            lines.Add($"     mirror: {step.AgentMirrorCommand}");
+        }
+
+        lines.Add("Verification command:");
+        lines.Add("  " + report.VerificationCommand);
         return string.Join(Environment.NewLine, lines);
     }
 
@@ -1533,4 +1769,42 @@ public sealed class MapUxWalkthroughStep
     public string AgentMirrorCommand { get; set; } = "";
     public string HumanResult { get; set; } = "";
     public string Notes { get; set; } = "";
+}
+
+public sealed class MapUxReviewResult
+{
+    public string ProjectRoot { get; set; } = "";
+    public string GeneratedAtUtc { get; set; } = "";
+    public string ReviewKind { get; set; } = "";
+    public string InputPath { get; set; } = "";
+    public string OutputPath { get; set; } = "";
+    public bool OutputWritten { get; set; }
+    public string Reviewer { get; set; } = "";
+    public string ReviewedAtUtc { get; set; } = "";
+    public string OverallResult { get; set; } = "";
+    public string Notes { get; set; } = "";
+    public bool ProjectFileExists { get; set; }
+    public bool StaticAuditOk { get; set; }
+    public int StepCount { get; set; }
+    public int PassedStepCount { get; set; }
+    public int PartialStepCount { get; set; }
+    public int FailedStepCount { get; set; }
+    public int PendingStepCount { get; set; }
+    public bool Complete { get; set; }
+    public bool Ok { get; set; }
+    public int IssueCount { get; set; }
+    public List<string> Issues { get; set; } = [];
+    public List<MapUxReviewStepResult> Steps { get; set; } = [];
+    public string VerificationCommand { get; set; } = "";
+}
+
+public sealed class MapUxReviewStepResult
+{
+    public int Order { get; set; }
+    public string Id { get; set; } = "";
+    public string ExpectedResult { get; set; } = "";
+    public string Result { get; set; } = "";
+    public bool Passed { get; set; }
+    public string Notes { get; set; } = "";
+    public string AgentMirrorCommand { get; set; } = "";
 }
