@@ -16,7 +16,7 @@ public sealed class EventProject
         var node = new EventNode
         {
             Id = $"evt_{Guid.NewGuid():N}"[..12],
-            Title = isGroup ? $"Task Group {Events.Count + 1}" : $"Task {Events.Count + 1}",
+            Title = isGroup ? $"Event Group {Events.Count + 1}" : $"Event {Events.Count + 1}",
             NodeKind = nodeKind,
             Domain = isGroup ? EventDomain.Meta : EventDomain.Story
         };

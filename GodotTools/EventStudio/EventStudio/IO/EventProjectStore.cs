@@ -70,7 +70,7 @@ public static class EventProjectStore
         var issues = new List<ValidationIssue>();
         if (project.Events.Count == 0)
         {
-            issues.Add(new ValidationIssue(ValidationSeverity.Error, "PROJECT_EMPTY", "Project has no tasks or events."));
+            issues.Add(new ValidationIssue(ValidationSeverity.Error, "PROJECT_EMPTY", "Project has no events."));
             return issues;
         }
 
@@ -79,7 +79,7 @@ public static class EventProjectStore
         {
             if (string.IsNullOrWhiteSpace(evt.Id))
             {
-                issues.Add(new ValidationIssue(ValidationSeverity.Error, "EVENT_ID_EMPTY", $"Task '{evt.Title}' is missing Id."));
+                issues.Add(new ValidationIssue(ValidationSeverity.Error, "EVENT_ID_EMPTY", $"Event '{evt.Title}' is missing Id."));
                 continue;
             }
 
@@ -90,7 +90,7 @@ public static class EventProjectStore
 
             if (!evt.Enabled && evt.NodeKind != EventNodeKind.TaskGroup)
             {
-                issues.Add(new ValidationIssue(ValidationSeverity.Warning, "EVENT_DISABLED", $"Task/event '{evt.Id}' is disabled."));
+                issues.Add(new ValidationIssue(ValidationSeverity.Warning, "EVENT_DISABLED", $"Event '{evt.Id}' is disabled."));
             }
         }
 
@@ -104,16 +104,26 @@ public static class EventProjectStore
         }
         else if (startEvent.NodeKind == EventNodeKind.TaskGroup)
         {
-            issues.Add(new ValidationIssue(ValidationSeverity.Error, "START_IS_GROUP", $"StartEventId points to display-only task group: {project.StartEventId}"));
+            issues.Add(new ValidationIssue(ValidationSeverity.Error, "START_IS_GROUP", $"StartEventId points to display-only event group: {project.StartEventId}"));
         }
 
         foreach (var evt in project.Events)
         {
             if (evt.NodeKind == EventNodeKind.TaskGroup)
             {
+                if (!string.IsNullOrWhiteSpace(evt.ParentGroupId) &&
+                    (!idLookup.TryGetValue(evt.ParentGroupId.Trim(), out var parentGroup) || parentGroup.NodeKind != EventNodeKind.TaskGroup))
+                {
+                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "GROUP_PARENT_MISSING", $"Event group {evt.Id} references missing parent group: {evt.ParentGroupId}"));
+                }
+                else if (HasGroupParentCycle(evt, idLookup))
+                {
+                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "GROUP_PARENT_CYCLE", $"Event group {evt.Id} has a parent folder cycle."));
+                }
+
                 if (evt.Triggers.Count > 0 || evt.Actions.Count > 0)
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "GROUP_HAS_FLOW", $"Task group {evt.Id} is display-only; triggers/actions are ignored."));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "GROUP_HAS_FLOW", $"Event group {evt.Id} is display-only; triggers/actions are ignored."));
                 }
                 continue;
             }
@@ -121,7 +131,7 @@ public static class EventProjectStore
             if (!string.IsNullOrWhiteSpace(evt.ParentGroupId) &&
                 (!idLookup.TryGetValue(evt.ParentGroupId.Trim(), out var group) || group.NodeKind != EventNodeKind.TaskGroup))
             {
-                issues.Add(new ValidationIssue(ValidationSeverity.Warning, "GROUP_MISSING", $"Task {evt.Id} references missing task group: {evt.ParentGroupId}"));
+                issues.Add(new ValidationIssue(ValidationSeverity.Warning, "GROUP_MISSING", $"Event {evt.Id} references missing event group: {evt.ParentGroupId}"));
             }
 
             for (var i = 0; i < evt.Actions.Count; i++)
@@ -134,27 +144,49 @@ public static class EventProjectStore
 
                 if (string.IsNullOrWhiteSpace(action.TargetEventId))
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_EMPTY", $"Task {evt.Id} StartEvent action #{i + 1} is missing TargetEventId."));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_EMPTY", $"Event {evt.Id} StartEvent action #{i + 1} is missing TargetEventId."));
                     continue;
                 }
 
                 var target = action.TargetEventId.Trim();
                 if (!idLookup.TryGetValue(target, out var targetEvent))
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_MISSING", $"Task {evt.Id} references missing target event: {target}"));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_MISSING", $"Event {evt.Id} references missing target event: {target}"));
                 }
                 else if (targetEvent.NodeKind == EventNodeKind.TaskGroup)
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_GROUP", $"Task {evt.Id} points to display-only task group: {target}"));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Error, "ACTION_TARGET_GROUP", $"Event {evt.Id} points to display-only event group: {target}"));
                 }
                 else if (string.Equals(target, evt.Id, StringComparison.OrdinalIgnoreCase))
                 {
-                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "ACTION_SELF_LOOP", $"Task {evt.Id} has a self loop."));
+                    issues.Add(new ValidationIssue(ValidationSeverity.Warning, "ACTION_SELF_LOOP", $"Event {evt.Id} has a self loop."));
                 }
             }
         }
 
         return issues;
+    }
+
+    private static bool HasGroupParentCycle(EventNode group, Dictionary<string, EventNode> idLookup)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { group.Id };
+        var parentId = group.ParentGroupId;
+        while (!string.IsNullOrWhiteSpace(parentId) && idLookup.TryGetValue(parentId.Trim(), out var parent))
+        {
+            if (parent.NodeKind != EventNodeKind.TaskGroup)
+            {
+                return false;
+            }
+
+            if (!seen.Add(parent.Id))
+            {
+                return true;
+            }
+
+            parentId = parent.ParentGroupId;
+        }
+
+        return false;
     }
 }
 

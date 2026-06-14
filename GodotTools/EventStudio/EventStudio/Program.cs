@@ -117,6 +117,17 @@ internal static class Program
                 return 1;
             }
 
+            project.Find("evt_start")!.Actions[0].TargetEventId = "evt_next";
+            var folderA = new EventNode { Id = "grp_a", Title = "Folder A", NodeKind = EventNodeKind.TaskGroup, ParentGroupId = "grp_b" };
+            var folderB = new EventNode { Id = "grp_b", Title = "Folder B", NodeKind = EventNodeKind.TaskGroup, ParentGroupId = "grp_a" };
+            project.Events.Add(folderA);
+            project.Events.Add(folderB);
+            if (!EventProjectStore.ValidateProject(project).Any(x => x.Severity == ValidationSeverity.Error && x.Code == "GROUP_PARENT_CYCLE"))
+            {
+                Console.Error.WriteLine("EventStudio agent self-test failed group parent cycle validation.");
+                return 1;
+            }
+
             Console.WriteLine("EventStudio agent self-test OK.");
             return 0;
         }

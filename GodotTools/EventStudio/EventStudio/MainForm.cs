@@ -8,14 +8,21 @@ namespace EventStudio;
 
 public sealed class MainForm : Form
 {
+    private const string AllGroupsId = "__all__";
+    private const string UngroupedId = "__ungrouped__";
+
     private EventProject _project = new();
     private string? _currentPath;
     private bool _dirty;
+    private string _currentGroupId = AllGroupsId;
 
     private readonly SplitContainer _root = new() { Dock = DockStyle.Fill, SplitterDistance = 320 };
+    private readonly SplitContainer _content = new() { Dock = DockStyle.Fill, SplitterDistance = 620 };
+    private readonly TreeView _groupTree = new() { Dock = DockStyle.Fill, HideSelection = false, AllowDrop = true, LabelEdit = true };
     private readonly ListBox _eventList = new() { Dock = DockStyle.Fill };
     private readonly DataGridView _taskGrid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false, ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false, SelectionMode = DataGridViewSelectionMode.FullRowSelect, MultiSelect = false };
     private readonly BindingSource _taskGridSource = new();
+    private bool _syncingGroupSelection;
     private bool _syncingTaskSelection;
     private readonly PropertyGrid _eventGrid = new() { Dock = DockStyle.Fill, ToolbarVisible = false, HelpVisible = true };
     private readonly DataGridView _triggerGrid = new() { Dock = DockStyle.Fill, AutoGenerateColumns = false };
@@ -94,8 +101,8 @@ public sealed class MainForm : Form
         _fileMenu.DropDownItems.Add("Exit", null, (_, _) => Close());
 
         _editMenu.DropDownItems.Clear();
-        _editMenu.DropDownItems.Add("Add Task Group", null, (_, _) => AddTaskGroup());
-        _editMenu.DropDownItems.Add("Add Task", null, (_, _) => AddTask());
+        _editMenu.DropDownItems.Add("Add Event Group", null, (_, _) => AddTaskGroup());
+        _editMenu.DropDownItems.Add("Add Event", null, (_, _) => AddTask());
         _editMenu.DropDownItems.Add("Delete Selected", null, (_, _) => RemoveSelectedEvent());
         _editMenu.DropDownItems.Add(new ToolStripSeparator());
         _editMenu.DropDownItems.Add("Add Trigger", null, (_, _) => AddTrigger());
@@ -108,16 +115,17 @@ public sealed class MainForm : Form
 
     private void BuildLayout()
     {
-        _eventTab.Text = "Task Detail";
+        _eventTab.Text = "Event Detail";
         _triggerTab.Text = "Triggers";
         _actionTab.Text = "Actions";
         _projectTab.Text = "Project";
 
+        SetupGroupTree();
         SetupTaskGrid();
         _eventList.DisplayMember = nameof(EventNode.Title);
         _eventList.SelectedIndexChanged += (_, _) => BindCurrentEvent();
         _eventList.ContextMenuStrip = BuildEventContextMenu();
-        _root.Panel1.Controls.Add(_taskGrid);
+        _root.Panel1.Controls.Add(_groupTree);
 
         _eventTab.Controls.Add(_eventGrid);
         _triggerTab.Controls.Add(_triggerGrid);
@@ -125,7 +133,9 @@ public sealed class MainForm : Form
         _projectTab.Controls.Add(_projectGrid);
 
         _rightTabs.TabPages.AddRange([_eventTab, _triggerTab, _actionTab, _projectTab]);
-        _root.Panel2.Controls.Add(_rightTabs);
+        _content.Panel1.Controls.Add(_taskGrid);
+        _content.Panel2.Controls.Add(_rightTabs);
+        _root.Panel2.Controls.Add(_content);
 
         SetupTriggerGrid();
         SetupActionGrid();
@@ -135,13 +145,40 @@ public sealed class MainForm : Form
         Controls.Add(_status);
     }
 
+    private void SetupGroupTree()
+    {
+        _groupTree.ContextMenuStrip = BuildGroupContextMenu();
+        _groupTree.AfterSelect += (_, _) => SelectGroupFromTree();
+        _groupTree.ItemDrag += (_, e) =>
+        {
+            if (e.Item is TreeNode { Tag: string id } && IsRealGroupId(id))
+            {
+                _groupTree.DoDragDrop(new GroupDragData(id), DragDropEffects.Move);
+            }
+        };
+        _groupTree.DragEnter += GroupTree_DragOver;
+        _groupTree.DragOver += GroupTree_DragOver;
+        _groupTree.DragDrop += GroupTree_DragDrop;
+        _groupTree.AfterLabelEdit += GroupTree_AfterLabelEdit;
+    }
+
+    private ContextMenuStrip BuildGroupContextMenu()
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Add Event Group", null, (_, _) => AddTaskGroup());
+        menu.Items.Add("Add Event", null, (_, _) => AddTask());
+        menu.Items.Add("Delete Selected", null, (_, _) => RemoveSelectedEvent());
+        return menu;
+    }
+
     private void SetupTaskGrid()
     {
-        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Kind", DataPropertyName = nameof(TaskRow.Kind), Width = 90 });
-        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Group", DataPropertyName = nameof(TaskRow.Group), Width = 150 });
         _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Id", DataPropertyName = nameof(TaskRow.Id), Width = 130 });
         _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Title", DataPropertyName = nameof(TaskRow.Title), Width = 180 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Trigger Source", DataPropertyName = nameof(TaskRow.TriggerSource), Width = 150 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Trigger Reason", DataPropertyName = nameof(TaskRow.TriggerReason), Width = 150 });
         _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Interact Object", DataPropertyName = nameof(TaskRow.InteractionObjectId), Width = 150 });
+        _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Output", DataPropertyName = nameof(TaskRow.Output), Width = 150 });
         _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "State", DataPropertyName = nameof(TaskRow.State), Width = 150 });
         _taskGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Completion Item", DataPropertyName = nameof(TaskRow.CompletionItem), Width = 150 });
         _taskGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Enabled", DataPropertyName = nameof(TaskRow.Enabled), Width = 70 });
@@ -151,14 +188,15 @@ public sealed class MainForm : Form
         _taskGrid.DataSource = _taskGridSource;
         _taskGrid.SelectionChanged += (_, _) => SelectEventFromTaskGrid();
         _taskGrid.CellDoubleClick += (_, _) => _rightTabs.SelectedTab = _eventTab;
+        _taskGrid.MouseDown += TaskGrid_MouseDown;
         _taskGrid.ContextMenuStrip = BuildTaskContextMenu();
     }
 
     private ContextMenuStrip BuildTaskContextMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Add Task Group", null, (_, _) => AddTaskGroup());
-        menu.Items.Add("Add Task", null, (_, _) => AddTask());
+        menu.Items.Add("Add Event Group", null, (_, _) => AddTaskGroup());
+        menu.Items.Add("Add Event", null, (_, _) => AddTask());
         menu.Items.Add("Delete Selected", null, (_, _) => RemoveSelectedEvent());
         return menu;
     }
@@ -229,6 +267,7 @@ public sealed class MainForm : Form
         _eventList.DataSource = null;
         _eventList.DataSource = _project.Events;
         _eventList.DisplayMember = nameof(EventNode.Title);
+        PopulateGroupTree();
         _taskGridSource.DataSource = BuildTaskRows();
         if (!string.IsNullOrWhiteSpace(selected))
         {
@@ -245,24 +284,157 @@ public sealed class MainForm : Form
         SyncTaskGridSelection();
     }
 
+    private void PopulateGroupTree()
+    {
+        var selected = _currentGroupId;
+        _syncingGroupSelection = true;
+        try
+        {
+            _groupTree.BeginUpdate();
+            _groupTree.Nodes.Clear();
+
+            var root = new TreeNode("All Events") { Tag = AllGroupsId };
+            var ungrouped = new TreeNode("Ungrouped") { Tag = UngroupedId };
+            root.Nodes.Add(ungrouped);
+
+            var groups = _project.Events
+                .Where(x => x.NodeKind == EventNodeKind.TaskGroup)
+                .ToDictionary(x => x.Id, StringComparer.OrdinalIgnoreCase);
+            var childLookup = groups.Values
+                .GroupBy(x => groups.ContainsKey(x.ParentGroupId) ? x.ParentGroupId : "", StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(x => x.Key, x => x.ToList(), StringComparer.OrdinalIgnoreCase);
+
+            AddGroupNodes(root, "", childLookup, []);
+            _groupTree.Nodes.Add(root);
+            root.Expand();
+
+            var node = FindGroupNode(selected) ?? root;
+            _currentGroupId = node.Tag as string ?? AllGroupsId;
+            _groupTree.SelectedNode = node;
+            node.EnsureVisible();
+        }
+        finally
+        {
+            _groupTree.EndUpdate();
+            _syncingGroupSelection = false;
+        }
+    }
+
+    private void AddGroupNodes(TreeNode parent, string parentGroupId, Dictionary<string, List<EventNode>> childLookup, HashSet<string> visited)
+    {
+        if (!childLookup.TryGetValue(parentGroupId, out var children))
+        {
+            return;
+        }
+
+        foreach (var group in children.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!visited.Add(group.Id))
+            {
+                continue;
+            }
+
+            var node = new TreeNode(group.Title) { Tag = group.Id };
+            parent.Nodes.Add(node);
+            AddGroupNodes(node, group.Id, childLookup, visited);
+            visited.Remove(group.Id);
+        }
+    }
+
+    private TreeNode? FindGroupNode(string id)
+    {
+        foreach (TreeNode node in _groupTree.Nodes)
+        {
+            var found = FindGroupNode(node, id);
+            if (found != null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    private static TreeNode? FindGroupNode(TreeNode node, string id)
+    {
+        if (node.Tag is string nodeId && string.Equals(nodeId, id, StringComparison.OrdinalIgnoreCase))
+        {
+            return node;
+        }
+
+        foreach (TreeNode child in node.Nodes)
+        {
+            var found = FindGroupNode(child, id);
+            if (found != null)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private List<TaskRow> BuildTaskRows()
     {
         var groups = _project.Events
             .Where(x => x.NodeKind == EventNodeKind.TaskGroup)
             .ToDictionary(x => x.Id, x => x.Title, StringComparer.OrdinalIgnoreCase);
-        return _project.Events.Select(evt => new TaskRow
+        return _project.Events
+            .Where(IsTaskInCurrentGroup)
+            .Select(evt => new TaskRow
         {
             Id = evt.Id,
-            Kind = evt.NodeKind == EventNodeKind.TaskGroup ? "Group" : "Task",
+            Kind = "Event",
             Group = string.IsNullOrWhiteSpace(evt.ParentGroupId) ? "" : groups.GetValueOrDefault(evt.ParentGroupId, evt.ParentGroupId),
             Title = evt.Title,
+            TriggerSource = SummarizeTriggerSource(evt),
+            TriggerReason = SummarizeTriggerReason(evt),
             InteractionObjectId = evt.InteractionObjectId,
+            Output = SummarizeOutput(evt),
             State = string.IsNullOrWhiteSpace(evt.StateKey) ? "" : $"{evt.StateKey}={evt.StateValueOnActivate}",
             CompletionItem = string.IsNullOrWhiteSpace(evt.CompletionItemId) ? "" : $"{evt.CompletionItemId} x{evt.CompletionItemCount}",
             Enabled = evt.Enabled,
             TriggerCount = evt.Triggers.Count,
             ActionCount = evt.Actions.Count
         }).ToList();
+    }
+
+    private static string SummarizeTriggerSource(EventNode evt)
+    {
+        var trigger = evt.Triggers.FirstOrDefault();
+        return trigger == null ? "" : trigger.SourceDomain.ToString();
+    }
+
+    private static string SummarizeTriggerReason(EventNode evt)
+    {
+        var trigger = evt.Triggers.FirstOrDefault();
+        if (trigger == null)
+        {
+            return "";
+        }
+
+        return string.IsNullOrWhiteSpace(trigger.Signal) ? trigger.Type.ToString() : trigger.Signal;
+    }
+
+    private static string SummarizeOutput(EventNode evt)
+    {
+        var action = evt.Actions.FirstOrDefault();
+        return action == null ? "" : action.Type.ToString();
+    }
+
+    private bool IsTaskInCurrentGroup(EventNode evt)
+    {
+        if (evt.NodeKind == EventNodeKind.TaskGroup)
+        {
+            return false;
+        }
+
+        return _currentGroupId switch
+        {
+            AllGroupsId => true,
+            UngroupedId => string.IsNullOrWhiteSpace(evt.ParentGroupId),
+            _ => string.Equals(evt.ParentGroupId, _currentGroupId, StringComparison.OrdinalIgnoreCase)
+        };
     }
 
     private void SyncTaskGridSelection()
@@ -305,6 +477,190 @@ public sealed class MainForm : Form
             _eventList.SelectedIndex = idx;
         }
     }
+
+    private void SelectGroupFromTree()
+    {
+        if (_syncingGroupSelection || _groupTree.SelectedNode?.Tag is not string groupId)
+        {
+            return;
+        }
+
+        _currentGroupId = groupId;
+        _taskGridSource.DataSource = BuildTaskRows();
+        if (IsRealGroupId(groupId))
+        {
+            SelectEvent(groupId, revealGroup: false);
+        }
+        else if (_taskGrid.Rows.Count > 0)
+        {
+            _taskGrid.Rows[0].Selected = true;
+            _taskGrid.CurrentCell = _taskGrid.Rows[0].Cells[0];
+        }
+        else
+        {
+            _eventGrid.SelectedObject = null;
+            _triggerGrid.DataSource = null;
+            _actionGrid.DataSource = null;
+        }
+
+        UpdateStatus();
+    }
+
+    private void GroupTree_AfterLabelEdit(object? sender, NodeLabelEditEventArgs e)
+    {
+        if (e.Label == null || e.Node?.Tag is not string groupId || !IsRealGroupId(groupId))
+        {
+            return;
+        }
+
+        var group = _project.Find(groupId);
+        if (group == null)
+        {
+            e.CancelEdit = true;
+            return;
+        }
+
+        var label = e.Label.Trim();
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            e.CancelEdit = true;
+            return;
+        }
+
+        group.Title = label;
+        BindEventList();
+        SelectGroup(group.Id);
+        MarkDirty();
+    }
+
+    private void TaskGrid_MouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left)
+        {
+            return;
+        }
+
+        var hit = _taskGrid.HitTest(e.X, e.Y);
+        if (hit.RowIndex < 0 || hit.RowIndex >= _taskGrid.Rows.Count)
+        {
+            return;
+        }
+
+        _taskGrid.CurrentCell = _taskGrid.Rows[hit.RowIndex].Cells[Math.Max(0, hit.ColumnIndex)];
+        if (_taskGrid.Rows[hit.RowIndex].DataBoundItem is TaskRow row)
+        {
+            _taskGrid.DoDragDrop(new EventDragData(row.Id), DragDropEffects.Move);
+        }
+    }
+
+    private void GroupTree_DragOver(object? sender, DragEventArgs e)
+    {
+        if (e.Data == null ||
+            (!e.Data.GetDataPresent(typeof(EventDragData)) && !e.Data.GetDataPresent(typeof(GroupDragData))))
+        {
+            e.Effect = DragDropEffects.None;
+            return;
+        }
+
+        var point = _groupTree.PointToClient(new Point(e.X, e.Y));
+        var targetNode = _groupTree.GetNodeAt(point);
+        if (targetNode != null)
+        {
+            _groupTree.SelectedNode = targetNode;
+        }
+
+        e.Effect = DragDropEffects.Move;
+    }
+
+    private void GroupTree_DragDrop(object? sender, DragEventArgs e)
+    {
+        if (e.Data == null)
+        {
+            return;
+        }
+
+        var point = _groupTree.PointToClient(new Point(e.X, e.Y));
+        var targetNode = _groupTree.GetNodeAt(point);
+        var targetGroupId = GetDropGroupId(targetNode);
+
+        if (e.Data.GetData(typeof(EventDragData)) is EventDragData eventDrag)
+        {
+            MoveEventToGroup(eventDrag.EventId, targetGroupId);
+            return;
+        }
+
+        if (e.Data.GetData(typeof(GroupDragData)) is GroupDragData groupDrag)
+        {
+            MoveGroupToGroup(groupDrag.GroupId, targetGroupId);
+        }
+    }
+
+    private string GetDropGroupId(TreeNode? targetNode)
+    {
+        if (targetNode?.Tag is not string id || id == AllGroupsId || id == UngroupedId)
+        {
+            return "";
+        }
+
+        return id;
+    }
+
+    private void MoveEventToGroup(string eventId, string targetGroupId)
+    {
+        var evt = _project.Find(eventId);
+        if (evt == null || evt.NodeKind == EventNodeKind.TaskGroup)
+        {
+            return;
+        }
+
+        evt.ParentGroupId = targetGroupId;
+        _currentGroupId = string.IsNullOrWhiteSpace(targetGroupId) ? UngroupedId : targetGroupId;
+        BindEventList();
+        SelectEvent(evt.Id);
+        MarkDirty();
+    }
+
+    private void MoveGroupToGroup(string groupId, string targetGroupId)
+    {
+        var group = _project.Find(groupId);
+        if (group == null || group.NodeKind != EventNodeKind.TaskGroup)
+        {
+            return;
+        }
+
+        if (string.Equals(groupId, targetGroupId, StringComparison.OrdinalIgnoreCase) ||
+            IsGroupDescendant(targetGroupId, groupId))
+        {
+            return;
+        }
+
+        group.ParentGroupId = targetGroupId;
+        _currentGroupId = group.Id;
+        BindEventList();
+        SelectGroup(group.Id);
+        MarkDirty();
+    }
+
+    private bool IsGroupDescendant(string maybeDescendantId, string ancestorId)
+    {
+        var current = _project.Find(maybeDescendantId);
+        while (current != null && current.NodeKind == EventNodeKind.TaskGroup)
+        {
+            if (string.Equals(current.ParentGroupId, ancestorId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            current = _project.Find(current.ParentGroupId);
+        }
+
+        return false;
+    }
+
+    private static bool IsRealGroupId(string id) =>
+        !string.IsNullOrWhiteSpace(id) &&
+        !string.Equals(id, AllGroupsId, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(id, UngroupedId, StringComparison.OrdinalIgnoreCase);
 
     private void BindCurrentEvent()
     {
@@ -349,33 +705,76 @@ public sealed class MainForm : Form
     private void AddTaskGroup()
     {
         var node = _project.CreateEvent(EventNodeKind.TaskGroup);
+        node.ParentGroupId = IsRealGroupId(_currentGroupId) ? _currentGroupId : "";
         BindEventList();
-        SelectEvent(node.Id);
+        SelectGroup(node.Id);
         MarkDirty();
     }
 
     private void AddTask()
     {
         var node = _project.CreateEvent(EventNodeKind.Task);
-        if (_eventList.SelectedItem is EventNode selected && selected.NodeKind == EventNodeKind.TaskGroup)
-        {
-            node.ParentGroupId = selected.Id;
-        }
+        node.ParentGroupId = IsRealGroupId(_currentGroupId) ? _currentGroupId : "";
+        InitializeNewEvent(node);
         BindEventList();
         SelectEvent(node.Id);
         MarkDirty();
     }
 
-    private bool SelectEvent(string id)
+    private static void InitializeNewEvent(EventNode node)
+    {
+        if (string.IsNullOrWhiteSpace(node.StateKey))
+        {
+            node.StateKey = $"event.{node.Id}.active";
+        }
+
+        if (node.Triggers.Count == 0)
+        {
+            node.Triggers.Add(new TriggerRule
+            {
+                Type = TriggerType.Signal,
+                SourceDomain = EventDomain.Map,
+                Signal = "ScenePosition"
+            });
+        }
+
+        if (node.Actions.Count == 0)
+        {
+            node.Actions.Add(new DispatchAction
+            {
+                Type = DispatchActionType.EmitSignal,
+                PayloadJson = "{\"signal\":\"EventActivated\"}"
+            });
+        }
+    }
+
+    private bool SelectEvent(string id, bool revealGroup = true)
     {
         var idx = _project.Events.FindIndex(x => string.Equals(x.Id, id, StringComparison.OrdinalIgnoreCase));
         if (idx < 0)
         {
             return false;
         }
+        var evt = _project.Events[idx];
+        if (revealGroup)
+        {
+            _currentGroupId = evt.NodeKind == EventNodeKind.TaskGroup
+                ? evt.Id
+                : string.IsNullOrWhiteSpace(evt.ParentGroupId) ? UngroupedId : evt.ParentGroupId;
+            PopulateGroupTree();
+            _taskGridSource.DataSource = BuildTaskRows();
+        }
         _eventList.SelectedIndex = idx;
         SyncTaskGridSelection();
         return true;
+    }
+
+    private bool SelectGroup(string id)
+    {
+        _currentGroupId = id;
+        PopulateGroupTree();
+        _taskGridSource.DataSource = BuildTaskRows();
+        return SelectEvent(id, revealGroup: false);
     }
 
     private void RemoveSelectedEvent()
@@ -392,10 +791,20 @@ public sealed class MainForm : Form
 
         if (requireConfirm)
         {
-            var yes = MessageBox.Show($"删除事件 {evt.Title}({evt.Id}) ?", "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            var label = evt.NodeKind == EventNodeKind.TaskGroup ? "event group" : "event";
+            var yes = MessageBox.Show($"Delete {label} {evt.Title} ({evt.Id})?", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (yes != DialogResult.Yes)
             {
                 return false;
+            }
+        }
+
+        var fallbackGroupId = evt.NodeKind == EventNodeKind.TaskGroup ? evt.ParentGroupId : "";
+        if (evt.NodeKind == EventNodeKind.TaskGroup)
+        {
+            foreach (var child in _project.Events.Where(x => string.Equals(x.ParentGroupId, evt.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                child.ParentGroupId = fallbackGroupId;
             }
         }
 
@@ -407,7 +816,12 @@ public sealed class MainForm : Form
 
         if (string.Equals(_project.StartEventId, evt.Id, StringComparison.OrdinalIgnoreCase))
         {
-            _project.StartEventId = _project.Events.FirstOrDefault()?.Id ?? "";
+            _project.StartEventId = _project.Events.FirstOrDefault(x => x.NodeKind != EventNodeKind.TaskGroup)?.Id ?? "";
+        }
+
+        if (string.Equals(_currentGroupId, evt.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            _currentGroupId = string.IsNullOrWhiteSpace(fallbackGroupId) ? AllGroupsId : fallbackGroupId;
         }
 
         BindEventList();
@@ -654,8 +1068,8 @@ public sealed class MainForm : Form
         var triggers = _project.Events.Where(x => x.NodeKind != EventNodeKind.TaskGroup).Sum(x => x.Triggers.Count);
         var actions = _project.Events.Where(x => x.NodeKind != EventNodeKind.TaskGroup).Sum(x => x.Actions.Count);
         _statusText.Text = string.IsNullOrWhiteSpace(text)
-            ? $"Tasks {tasks} | Groups {groups} | Triggers {triggers} | Actions {actions} | StartEvent: {_project.StartEventId}"
-            : $"{text} | Tasks {tasks} | Groups {groups} | Triggers {triggers} | Actions {actions}";
+            ? $"Events {tasks} | Groups {groups} | Triggers {triggers} | Actions {actions} | StartEvent: {_project.StartEventId}"
+            : $"{text} | Events {tasks} | Groups {groups} | Triggers {triggers} | Actions {actions}";
     }
 
     private void InitializeReplayInputs()
@@ -672,8 +1086,10 @@ public sealed class MainForm : Form
         var group = _project.CreateEvent(EventNodeKind.TaskGroup);
         group.Title = "Main Quest";
         var task = _project.CreateEvent(EventNodeKind.Task);
-        task.Title = "New Task";
+        task.Title = "New Event";
         task.ParentGroupId = group.Id;
+        InitializeNewEvent(task);
+        _currentGroupId = group.Id;
         _currentPath = null;
         _dirty = false;
         BindProject();
@@ -687,6 +1103,7 @@ public sealed class MainForm : Form
         {
             _project.CreateEvent(EventNodeKind.Task);
         }
+        _currentGroupId = AllGroupsId;
         _currentPath = path;
         _dirty = false;
         BindProject();
@@ -826,6 +1243,7 @@ public sealed class MainForm : Form
             "main.btnSaveProject",
             "main.btnSaveAs",
             "main.btnExportRuntime",
+            "main.btnAddEventGroup",
             "main.btnAddEvent",
             "main.btnDeleteEvent",
             "main.btnAddTrigger",
@@ -979,6 +1397,10 @@ public sealed class MainForm : Form
                     return ReplayFail("export path is empty");
                 }
                 response = ExportRuntimeGraphToPath(exportPath, out var exportMsg) ? ReplayOk(exportMsg) : ReplayFail(exportMsg);
+                break;
+            case "main.btnAddEventGroup":
+                AddTaskGroup();
+                response = ReplayOk("added event group");
                 break;
             case "main.btnAddEvent":
                 AddEvent();
@@ -1316,9 +1738,10 @@ public sealed class MainForm : Form
             "main.btnSaveProject" => GetMenuPoint(_fileMenu),
             "main.btnSaveAs" => GetMenuPoint(_fileMenu),
             "main.btnExportRuntime" => GetMenuPoint(_fileMenu),
-            "main.btnAddEvent" => GetListPoint(_eventList, _project.Events.Count),
-            "main.btnDeleteEvent" => GetListPoint(_eventList, Math.Max(0, _eventList.SelectedIndex)),
-            "main.btnSelectEvent" => GetListPoint(_eventList, Math.Max(0, _eventList.SelectedIndex)),
+            "main.btnAddEventGroup" => GetTreePoint(_groupTree, Math.Max(0, _groupTree.SelectedNode?.Level ?? 0)),
+            "main.btnAddEvent" => GetGridPoint(_taskGrid, Math.Max(1, _taskGrid.Rows.Count), 0),
+            "main.btnDeleteEvent" => GetGridPoint(_taskGrid, Math.Max(1, _taskGrid.CurrentRow?.Index + 1 ?? 1), 0),
+            "main.btnSelectEvent" => GetGridPoint(_taskGrid, Math.Max(1, _taskGrid.CurrentRow?.Index + 1 ?? 1), 0),
             "main.btnAddTrigger" => GetGridPoint(_triggerGrid, 0, 0),
             "main.btnDeleteTrigger" => GetGridPoint(_triggerGrid, 1, 0),
             "main.btnAddAction" => GetGridPoint(_actionGrid, 0, 0),
@@ -1370,6 +1793,12 @@ public sealed class MainForm : Form
         return list.PointToScreen(new Point(Math.Min(list.Width - 20, 110), Math.Min(list.Height - 20, y)));
     }
 
+    private Point GetTreePoint(TreeView tree, int index)
+    {
+        var y = 20 + Math.Max(0, index) * Math.Max(tree.ItemHeight, 24);
+        return tree.PointToScreen(new Point(Math.Min(tree.Width - 20, 120), Math.Min(tree.Height - 20, y)));
+    }
+
     private ReplayResponse ReplayOk(string message) => new() { Success = true, Message = message, ActiveDialog = "" };
     private ReplayResponse ReplayFail(string message) => new() { Success = false, Message = message, ActiveDialog = "" };
 
@@ -1392,10 +1821,17 @@ internal sealed class TaskRow
     public string Kind { get; set; } = "";
     public string Group { get; set; } = "";
     public string Title { get; set; } = "";
+    public string TriggerSource { get; set; } = "";
+    public string TriggerReason { get; set; } = "";
     public string InteractionObjectId { get; set; } = "";
+    public string Output { get; set; } = "";
     public string State { get; set; } = "";
     public string CompletionItem { get; set; } = "";
     public bool Enabled { get; set; }
     public int TriggerCount { get; set; }
     public int ActionCount { get; set; }
 }
+
+internal sealed record EventDragData(string EventId);
+
+internal sealed record GroupDragData(string GroupId);
