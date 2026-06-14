@@ -187,6 +187,7 @@ internal static class Program
                     {
                         Path = relativePath,
                         ReadyForDesignReview = plan.ReadyForDesignReview,
+                        CheckCount = plan.CheckCount,
                         MissingCount = plan.MissingCount,
                         MissingChecks = plan.MissingChecks,
                         Domain = plan.Domain,
@@ -200,6 +201,7 @@ internal static class Program
                     {
                         Path = relativePath,
                         ReadyForDesignReview = false,
+                        CheckCount = 0,
                         MissingCount = 1,
                         MissingChecks = ["parse"],
                         Domain = "",
@@ -223,7 +225,7 @@ internal static class Program
             FailedCount = failedCount,
             Ok = plans.Count > 0 && failedCount == 0,
             Plans = plans,
-            SuggestedCommand = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan --summary --out BuildLogs\\mutation_plan.json --domain map --intent \"describe intended edit\" --writes \"res://CoreEngine/...\" --before-dump \"BuildLogs/before.json\" --after-dump \"BuildLogs/after.json\" --summary-command \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --verifier \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --ux \"human review path\" --recovery \"rollback or reject path\" -NoBuild"
+            SuggestedCommand = BuildMutationPlanTemplateCommand("map")
         };
     }
 
@@ -676,11 +678,12 @@ internal static class Program
             BuildMutationPlanCheck("before-dump", "Before/after dump", !string.IsNullOrWhiteSpace(beforeDump) && !string.IsNullOrWhiteSpace(afterDump), "Provide --before-dump and --after-dump so the edit can be inspected as data."),
             BuildMutationPlanCheck("summary-command", "Human-readable summary", !string.IsNullOrWhiteSpace(summaryCommand), "Provide --summary-command for a concise human review path."),
             BuildMutationPlanCheck("verifier", "Game-effect verifier", !string.IsNullOrWhiteSpace(verifier), "Provide --verifier with the Testor command that proves CoreEngine sees the written result."),
-            BuildMutationPlanCheck("ux-recovery", "UX/recovery path", !string.IsNullOrWhiteSpace(uxPath) && !string.IsNullOrWhiteSpace(recovery), "Provide --ux and --recovery for human validation and backing away from a bad edit.")
+            BuildMutationPlanCheck("ux-recovery", "UX/recovery path", !string.IsNullOrWhiteSpace(uxPath) && !string.IsNullOrWhiteSpace(recovery), "Provide --ux and --recovery for human validation and backing away from a bad edit."),
+            BuildMutationPlanCheck("concrete-values", "Concrete non-template values", !HasMutationPlanPlaceholders(intent, writes, beforeDump, afterDump, summaryCommand, verifier, uxPath, recovery), "Replace template placeholders such as <...>, ..., 'describe intended edit', and generic UX/recovery text before design review.")
         };
 
         var missing = checks.Where(x => !x.Satisfied).Select(x => x.Id).ToList();
-        return new ToolMutationPlanReport
+        var report = new ToolMutationPlanReport
         {
             ProjectRoot = root,
             GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
@@ -704,10 +707,10 @@ internal static class Program
             CheckCount = checks.Count,
             Checks = checks,
             AcceptanceRule = "This is a design/review plan only. Do not implement or accept the mutating command until all checks are satisfied and the verifier proves the exact written effect.",
-            SuggestedNextCommand = missing.Count == 0
-                ? "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 closure-gates --summary -NoBuild"
-                : BuildMutationPlanTemplateCommand(domain)
+            SuggestedNextCommands = BuildMutationPlanNextCommands(missing.Count == 0, domain, summaryCommand, verifier)
         };
+        report.SuggestedNextCommand = report.SuggestedNextCommands.FirstOrDefault() ?? "";
+        return report;
     }
 
     private static ToolMutationPlanReport ReadMutationPlanReport(string root, string inputPath)
@@ -741,7 +744,8 @@ internal static class Program
             BuildMutationPlanCheck("before-dump", "Before/after dump", !string.IsNullOrWhiteSpace(report.BeforeDump) && !string.IsNullOrWhiteSpace(report.AfterDump), "Provide --before-dump and --after-dump so the edit can be inspected as data."),
             BuildMutationPlanCheck("summary-command", "Human-readable summary", !string.IsNullOrWhiteSpace(report.SummaryCommand), "Provide --summary-command for a concise human review path."),
             BuildMutationPlanCheck("verifier", "Game-effect verifier", !string.IsNullOrWhiteSpace(report.VerifierCommand), "Provide --verifier with the Testor command that proves CoreEngine sees the written result."),
-            BuildMutationPlanCheck("ux-recovery", "UX/recovery path", !string.IsNullOrWhiteSpace(report.UxPath) && !string.IsNullOrWhiteSpace(report.RecoveryPath), "Provide --ux and --recovery for human validation and backing away from a bad edit.")
+            BuildMutationPlanCheck("ux-recovery", "UX/recovery path", !string.IsNullOrWhiteSpace(report.UxPath) && !string.IsNullOrWhiteSpace(report.RecoveryPath), "Provide --ux and --recovery for human validation and backing away from a bad edit."),
+            BuildMutationPlanCheck("concrete-values", "Concrete non-template values", !HasMutationPlanPlaceholders(report.Intent, report.WriteTargets, report.BeforeDump, report.AfterDump, report.SummaryCommand, report.VerifierCommand, report.UxPath, report.RecoveryPath), "Replace template placeholders such as <...>, ..., 'describe intended edit', and generic UX/recovery text before design review.")
         };
 
         var missing = checks.Where(x => !x.Satisfied).Select(x => x.Id).ToList();
@@ -753,9 +757,8 @@ internal static class Program
         report.AcceptanceRule = string.IsNullOrWhiteSpace(report.AcceptanceRule)
             ? "This is a design/review plan only. Do not implement or accept the mutating command until all checks are satisfied and the verifier proves the exact written effect."
             : report.AcceptanceRule;
-        report.SuggestedNextCommand = missing.Count == 0
-            ? "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 closure-gates --summary -NoBuild"
-            : BuildMutationPlanTemplateCommand(report.Domain);
+        report.SuggestedNextCommands = BuildMutationPlanNextCommands(missing.Count == 0, report.Domain, report.SummaryCommand, report.VerifierCommand);
+        report.SuggestedNextCommand = report.SuggestedNextCommands.FirstOrDefault() ?? "";
     }
 
     private static ToolMutationPlanCheck BuildMutationPlanCheck(string id, string title, bool satisfied, string requirement)
@@ -767,6 +770,66 @@ internal static class Program
             Satisfied = satisfied,
             Requirement = requirement
         };
+    }
+
+    private static bool HasMutationPlanPlaceholders(
+        string intent,
+        IReadOnlyCollection<string> writeTargets,
+        string beforeDump,
+        string afterDump,
+        string summaryCommand,
+        string verifierCommand,
+        string uxPath,
+        string recoveryPath)
+    {
+        var values = new List<string>
+        {
+            intent,
+            beforeDump,
+            afterDump,
+            summaryCommand,
+            verifierCommand,
+            uxPath,
+            recoveryPath
+        };
+        values.AddRange(writeTargets);
+        return values.Any(IsMutationPlanPlaceholder);
+    }
+
+    private static bool IsMutationPlanPlaceholder(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var normalized = value.Trim().ToLowerInvariant();
+        if (normalized.Contains("...", StringComparison.Ordinal) ||
+            normalized.Contains("<", StringComparison.Ordinal) ||
+            normalized.Contains(">", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return normalized is "describe intended edit" or "human review path" or "rollback or reject path";
+    }
+
+    private static List<string> BuildMutationPlanNextCommands(bool readyForDesignReview, string domain, string summaryCommand, string verifierCommand)
+    {
+        if (!readyForDesignReview)
+            return [BuildMutationPlanTemplateCommand(domain)];
+
+        var commands = new List<string>();
+        if (!string.IsNullOrWhiteSpace(summaryCommand))
+            commands.Add(summaryCommand);
+        if (!string.IsNullOrWhiteSpace(verifierCommand) &&
+            !verifierCommand.Equals(summaryCommand, StringComparison.OrdinalIgnoreCase))
+        {
+            commands.Add(verifierCommand);
+        }
+
+        commands.Add("powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map ux-review --summary -NoBuild");
+        commands.Add("powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan verify --summary --dir BuildLogs -NoBuild");
+        commands.Add("powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 closure-gates --summary -NoBuild");
+        return commands;
     }
 
     private static List<string> SplitPlanValues(string value)
@@ -781,17 +844,34 @@ internal static class Program
 
     private static string BuildMutationPlanTemplateCommand(string domain)
     {
-        var normalizedDomain = string.IsNullOrWhiteSpace(domain) ? "map" : domain;
+        var normalizedDomain = string.IsNullOrWhiteSpace(domain) ? "map" : domain.Trim();
+        if (normalizedDomain.Equals("resource", StringComparison.OrdinalIgnoreCase) ||
+            normalizedDomain.Equals("resource-map", StringComparison.OrdinalIgnoreCase))
+        {
+            return "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan --summary " +
+                "--out BuildLogs\\mutation_plan.json " +
+                $"--domain {normalizedDomain} " +
+                "--intent \"draft reviewed resource configuration output workflow\" " +
+                "--writes \"BuildLogs/resource_apply_preview.json;BuildLogs/resource_approved_dependencies.json;BuildLogs/resource_cleanup_candidates.json\" " +
+                "--before-dump \"BuildLogs/resource_plan_before.json\" " +
+                "--after-dump \"BuildLogs/resource_plan_after.json\" " +
+                "--summary-command \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 resource pending --summary --limit 20 -NoBuild\" " +
+                "--verifier \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 resource verify-outputs --summary -NoBuild\" " +
+                "--ux \"CLI summary review of accepted resource decisions and generated outputs\" " +
+                "--recovery \"restore resource plan and decisions snapshots, then rerun resource status and verify-outputs\" -NoBuild";
+        }
+
         return "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan --summary " +
+            "--out BuildLogs\\mutation_plan.json " +
             $"--domain {normalizedDomain} " +
-            "--intent \"describe intended edit\" " +
-            "--writes \"res://CoreEngine/...\" " +
-            "--before-dump \"BuildLogs/before.json\" " +
-            "--after-dump \"BuildLogs/after.json\" " +
-            "--summary-command \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" " +
-            "--verifier \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" " +
-            "--ux \"human review path\" " +
-            "--recovery \"rollback or reject path\" -NoBuild";
+            "--intent \"draft reviewed Corridor map portal and resource-classification edit workflow\" " +
+            "--writes \"res://CoreEngine/Maps/Corridor.tscn;BuildLogs/map_project_after.json\" " +
+            "--before-dump \"BuildLogs/map_project_before.json\" " +
+            "--after-dump \"BuildLogs/map_project_after.json\" " +
+            "--summary-command \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map validate --summary -NoBuild\" " +
+            "--verifier \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 map runtime-verify --summary -NoBuild\" " +
+            "--ux \"MapEditor live click-through covering Corridor inspection edit preview validation and recovery before accepting the edit\" " +
+            "--recovery \"restore BuildLogs map_project_before snapshot, revert Corridor.tscn, then rerun map validate and runtime-verify\" -NoBuild";
     }
 
     private static string FormatMutationPlanSummary(ToolMutationPlanReport report)
@@ -839,6 +919,15 @@ internal static class Program
             lines.Add($"Notes: {report.Notes}");
         }
         lines.Add($"Suggested next command: {report.SuggestedNextCommand}");
+        lines.Add("Suggested next commands:");
+        if (report.SuggestedNextCommands.Count == 0)
+        {
+            lines.Add("  none");
+        }
+        foreach (var command in report.SuggestedNextCommands)
+        {
+            lines.Add($"  {command}");
+        }
         return string.Join(Environment.NewLine, lines);
     }
 
@@ -865,7 +954,7 @@ internal static class Program
         foreach (var plan in report.Plans)
         {
             var state = plan.ReadyForDesignReview ? "OK" : "MISSING";
-            lines.Add($"  {state} {plan.Path} domain={BlankAsUnknown(plan.Domain)} missing={plan.MissingCount} intent={BlankAsUnknown(plan.Intent)}");
+            lines.Add($"  {state} {plan.Path} domain={BlankAsUnknown(plan.Domain)} checks={plan.CheckCount} missing={plan.MissingCount} intent={BlankAsUnknown(plan.Intent)}");
             if (plan.MissingChecks.Count > 0)
             {
                 lines.Add($"    missing: {string.Join(",", plan.MissingChecks)}");
@@ -1026,7 +1115,7 @@ internal static class Program
                     Severity = "info",
                     Title = "Draft a mutation plan before editing",
                     Reason = "Use a persisted pre-write plan to name write targets, before/after dumps, summary command, verifier, UX path, and recovery path before any map/resource mutation is implemented. Recheck it with mutation-plan --in before Coder starts writing.",
-                    Command = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan --summary --out BuildLogs\\mutation_plan.json --domain map --intent \"describe intended edit\" --writes \"res://CoreEngine/...\" --before-dump \"BuildLogs/before.json\" --after-dump \"BuildLogs/after.json\" --summary-command \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --verifier \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --ux \"human review path\" --recovery \"rollback or reject path\" -NoBuild"
+                    Command = BuildMutationPlanTemplateCommand("map")
                 });
             }
         }
@@ -1416,7 +1505,7 @@ internal static class Program
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 resource map-review --summary --limit 20 -NoBuild"),
             BuildDumpArtifact(root, "mutation-plan", "toolhub", "review", "BuildLogs/mutation_plan.json", false,
                 "Persisted pre-write design plan for the next mutating map/resource workflow.",
-                "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan --summary --out BuildLogs\\mutation_plan.json --domain map --intent \"describe intended edit\" --writes \"res://CoreEngine/...\" --before-dump \"BuildLogs/before.json\" --after-dump \"BuildLogs/after.json\" --summary-command \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --verifier \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --ux \"human review path\" --recovery \"rollback or reject path\" -NoBuild",
+                BuildMutationPlanTemplateCommand("map"),
                 "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan --summary --in BuildLogs\\mutation_plan.json -NoBuild"),
             BuildDumpArtifact(root, "map-ux-walkthrough", "map", "review", "BuildLogs/map_ux_walkthrough.json", false,
                 "Human live UX walkthrough checklist for MapEditor import, inspect, edit preview, save/review, validation, and recovery flows.",
@@ -2512,7 +2601,7 @@ internal static class Program
                     Severity = "info",
                     Title = "Draft a mutation plan before editing",
                     Reason = "Self-test fixture. Recheck it with mutation-plan --in before Coder starts writing.",
-                    Command = "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 mutation-plan --summary --out BuildLogs\\mutation_plan.json --domain map --intent \"describe intended edit\" --writes \"res://CoreEngine/...\" --before-dump \"BuildLogs/before.json\" --after-dump \"BuildLogs/after.json\" --summary-command \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --verifier \"powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild\" --ux \"human review path\" --recovery \"rollback or reject path\" -NoBuild"
+                    Command = BuildMutationPlanTemplateCommand("map")
                 }
             ]
         };
@@ -2627,6 +2716,24 @@ internal static class Program
             Console.Error.WriteLine("ToolHub agent self-test failed incomplete mutation-plan checks.");
             return 1;
         }
+        var placeholderPlan = BuildMutationPlanReport(temp,
+        [
+            "--domain", "map",
+            "--intent", "describe intended edit",
+            "--writes", "res://CoreEngine/Maps/<reviewed-map>.tscn;BuildLogs/test_after.json",
+            "--before-dump", "BuildLogs/test_before.json",
+            "--after-dump", "BuildLogs/test_after.json",
+            "--summary-command", "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild",
+            "--verifier", "powershell -NoProfile -ExecutionPolicy Bypass -File .\\tools.ps1 ... --summary -NoBuild",
+            "--ux", "human review path",
+            "--recovery", "rollback or reject path"
+        ]);
+        if (placeholderPlan.ReadyForDesignReview ||
+            !placeholderPlan.MissingChecks.Contains("concrete-values", StringComparer.OrdinalIgnoreCase))
+        {
+            Console.Error.WriteLine("ToolHub agent self-test failed placeholder mutation-plan checks.");
+            return 1;
+        }
         var completePlan = BuildMutationPlanReport(temp,
         [
             "--domain", "map",
@@ -2645,7 +2752,10 @@ internal static class Program
             !planSummary.Contains("ToolHub mutation plan", StringComparison.Ordinal) ||
             !planSummary.Contains("Ready for design review: YES", StringComparison.Ordinal) ||
             !planSummary.Contains("res://CoreEngine/Maps/TestRoom.tscn", StringComparison.Ordinal) ||
-            !planSummary.Contains("[ok] verifier", StringComparison.Ordinal))
+            !planSummary.Contains("[ok] verifier", StringComparison.Ordinal) ||
+            !planSummary.Contains("Suggested next commands:", StringComparison.Ordinal) ||
+            !planSummary.Contains("map validate --summary", StringComparison.Ordinal) ||
+            !planSummary.Contains("map runtime-verify --summary", StringComparison.Ordinal))
         {
             Console.Error.WriteLine("ToolHub agent self-test failed complete mutation-plan summary formatting.");
             return 1;
@@ -2656,7 +2766,8 @@ internal static class Program
         if (!File.Exists(Path.Combine(temp, planOut)) ||
             !reloadedPlan.ReadyForDesignReview ||
             !reloadedPlan.InputPath.Equals(planOut.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase) ||
-            reloadedPlan.OutputWritten)
+            reloadedPlan.OutputWritten ||
+            reloadedPlan.SuggestedNextCommands.Count < 4)
         {
             Console.Error.WriteLine("ToolHub agent self-test failed mutation-plan artifact round trip.");
             return 1;
@@ -2666,8 +2777,10 @@ internal static class Program
         if (!verifyPlans.Ok ||
             verifyPlans.PlanCount != 1 ||
             verifyPlans.ReadyCount != 1 ||
+            verifyPlans.Plans[0].CheckCount != 8 ||
             !verifyPlansSummary.Contains("ToolHub mutation plan verification", StringComparison.Ordinal) ||
             !verifyPlansSummary.Contains("Overall: OK plans=1 ready=1 failed=0", StringComparison.Ordinal) ||
+            !verifyPlansSummary.Contains("checks=8 missing=0", StringComparison.Ordinal) ||
             !verifyPlansSummary.Contains("BuildLogs/mutation_plan.json", StringComparison.Ordinal))
         {
             Console.Error.WriteLine("ToolHub agent self-test failed mutation-plan verify success case.");
@@ -3425,6 +3538,7 @@ public sealed class ToolMutationPlanReport
     public List<ToolMutationPlanCheck> Checks { get; set; } = [];
     public string AcceptanceRule { get; set; } = "";
     public string SuggestedNextCommand { get; set; } = "";
+    public List<string> SuggestedNextCommands { get; set; } = [];
 }
 
 public sealed class ToolMutationPlanCheck
@@ -3453,6 +3567,7 @@ public sealed class ToolMutationPlanVerifyItem
 {
     public string Path { get; set; } = "";
     public bool ReadyForDesignReview { get; set; }
+    public int CheckCount { get; set; }
     public int MissingCount { get; set; }
     public List<string> MissingChecks { get; set; } = [];
     public string Domain { get; set; } = "";
