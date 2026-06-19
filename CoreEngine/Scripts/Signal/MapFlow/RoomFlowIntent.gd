@@ -8,7 +8,6 @@ const KIND_SHIFT_PLAYER: StringName = &"shift_player"
 const KIND_SET_LOOP_TARGET: StringName = &"set_loop_target"
 const KIND_CLEAR_LOOP_TARGET: StringName = &"clear_loop_target"
 const KIND_MOVE_PLAYER_TO_POSITION: StringName = &"move_player_to_position"
-const KIND_MOVE_PLAYER_TO_NODE: StringName = &"move_player_to_node"
 const KIND_CALL_MAP_NODE_METHOD: StringName = &"call_map_node_method"
 const KIND_CLEAR_PLAYER_EVENT: StringName = &"clear_player_event"
 

@@ -31,6 +31,8 @@ const TYPE_INVENTORY_UPDATED: StringName = &"inventory_updated"
 const TYPE_QUEST_ACTION_REQUEST: StringName = &"quest_action_request"
 const TYPE_QUEST_UPDATED: StringName = &"quest_updated"
 
+const TYPE_DIALOGUE_ACTION_REQUEST: StringName = &"dialogue_action_request"
+
 const TYPE_AUDIO_REQUEST: StringName = &"audio_request"
 
 const TYPE_ADD_GENERATED_ROOM: StringName = &"add_generated_room"

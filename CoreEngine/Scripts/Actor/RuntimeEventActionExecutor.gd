@@ -2,6 +2,8 @@ extends RefCounted
 class_name RuntimeEventActionExecutor
 
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const DialogueActionTypesScript = preload("res://CoreEngine/Scripts/Contract/DialogueActionTypes.gd")
+const QuestActionTypesScript = preload("res://CoreEngine/Scripts/Contract/QuestActionTypes.gd")
 
 var _workbench: WorkbenchService
 
@@ -58,7 +60,7 @@ func _execute_intent(intent: RuntimeEventActionIntent, fire_event_callback: Call
 			if quest_id != &"":
 				_workbench.send({
 					"type": MessageTypes.TYPE_QUEST_ACTION_REQUEST,
-					"action": &"complete",
+					"action": QuestActionTypesScript.COMPLETE,
 					"quest_id": quest_id
 				})
 
@@ -82,14 +84,15 @@ func _try_start_dialogue(payload: Dictionary) -> bool:
 		return false
 	if story_text.is_empty() and npc_text.is_empty():
 		return false
-	var manager: Node = _get_dialogue_manager()
-	if manager == null:
+	if _workbench == null:
 		return false
-	manager.request_dialogue(dialogue_id, speaker, story_text, npc_text)
+	_workbench.send({
+		"type": MessageTypes.TYPE_DIALOGUE_ACTION_REQUEST,
+		"action": DialogueActionTypesScript.REQUEST_DIALOGUE,
+		"dialogue_id": dialogue_id,
+		"speaker": speaker,
+		"story_text": story_text,
+		"npc_text": npc_text,
+		"source": "RuntimeEvent",
+	})
 	return true
-
-func _get_dialogue_manager() -> Node:
-	var tree := _workbench.get_tree()
-	if tree == null:
-		return null
-	return tree.root.find_child("DialogueManagerActor", true, false)

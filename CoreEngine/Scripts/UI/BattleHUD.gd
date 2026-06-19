@@ -1,4 +1,5 @@
 extends Control
+class_name BattleHUD
 
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 

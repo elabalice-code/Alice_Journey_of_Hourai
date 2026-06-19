@@ -845,12 +845,21 @@ public static class CliEntry
         AddTextCheck(checks, godotRoot, "portal-sends-load-room-request", "CoreEngine/Scripts/World/Portal.gd",
             text => text.Contains("TYPE_LOAD_ROOM_REQUEST", StringComparison.Ordinal) && text.Contains("\"target_map\": target_map", StringComparison.Ordinal),
             "Portal sends TYPE_LOAD_ROOM_REQUEST with target_map.");
-        AddTextCheck(checks, godotRoot, "room-flow-handles-load-room-request", "CoreEngine/Scripts/Actor/RoomFlowActor.gd",
-            text => text.Contains("TYPE_LOAD_ROOM_REQUEST", StringComparison.Ordinal) && text.Contains("msg.get(\"target_map\"", StringComparison.Ordinal),
-            "RoomFlowActor handles TYPE_LOAD_ROOM_REQUEST and reads target_map.");
-        AddTextCheck(checks, godotRoot, "room-flow-calls-game-load-room", "CoreEngine/Scripts/Actor/RoomFlowActor.gd",
+        AddTextCheck(checks, godotRoot, "room-flow-actor-registers-load-room-request", "CoreEngine/Scripts/Actor/RoomFlowActor.gd",
+            text => text.Contains("TYPE_LOAD_ROOM_REQUEST", StringComparison.Ordinal) && text.Contains("RoomFlowRouterScript.route", StringComparison.Ordinal),
+            "RoomFlowActor registers load-room messages and delegates them to MapFlow.");
+        AddTextCheck(checks, godotRoot, "room-flow-router-reads-target-map", "CoreEngine/Scripts/Signal/MapFlow/RoomFlowRouter.gd",
+            text => text.Contains("TYPE_LOAD_ROOM_REQUEST", StringComparison.Ordinal) && text.Contains("target_map", StringComparison.Ordinal),
+            "RoomFlowRouter reads target_map from TYPE_LOAD_ROOM_REQUEST.");
+        AddTextCheck(checks, godotRoot, "room-flow-executor-calls-game-load-room", "CoreEngine/Scripts/Actor/RoomFlowIntentExecutor.gd",
             text => text.Contains("game.load_room(target)", StringComparison.Ordinal),
-            "RoomFlowActor calls game.load_room(target).");
+            "RoomFlowIntentExecutor calls game.load_room(target).");
+        AddTextCheck(checks, godotRoot, "room-flow-executor-owns-map-window-reset", "CoreEngine/Scripts/Actor/RoomFlowIntentExecutor.gd",
+            text => text.Contains("KIND_RESET_MAP_STARTING_COORDS", StringComparison.Ordinal)
+                && text.Contains("_reset_map_starting_coords", StringComparison.Ordinal)
+                && text.Contains("UI/MapWindow", StringComparison.Ordinal)
+                && text.Contains("reset_starting_coords", StringComparison.Ordinal),
+            "RoomFlowIntentExecutor owns reset_map_starting_coords UI/MapWindow side effect.");
         AddTextCheck(checks, godotRoot, "metsys-load-room-exists", "addons/MetroidvaniaSystem/Template/Scripts/MetSysGame.gd",
             text => text.Contains("func load_room(path", StringComparison.Ordinal),
             "MetSysGame exposes load_room(path).");
@@ -863,6 +872,222 @@ public static class CliEntry
         AddTextCheck(checks, godotRoot, "area-catalog-starting-rooms", "CoreEngine/Scripts/World/AreaCatalog.gd",
             text => ExtractResPaths(text).Any(x => x.StartsWith("res://CoreEngine/Maps/", StringComparison.Ordinal)),
             "AreaCatalog.gd references area starting rooms.");
+        AddTextCheck(checks, godotRoot, "map-area-state-actor-applies-area-catalog", "CoreEngine/Scripts/Actor/MapAreaStateActor.gd",
+            text => text.Contains("AreaCatalog.get_initial_area_id", StringComparison.Ordinal)
+                && text.Contains("AreaCatalog.get_area_def", StringComparison.Ordinal)
+                && text.Contains("KEY_CURRENT_AREA_ID", StringComparison.Ordinal)
+                && text.Contains("TYPE_INPUT_MODE_CHANGE_REQUEST", StringComparison.Ordinal)
+                && text.Contains("MapInputModeNameScript.from_area_input_mode", StringComparison.Ordinal),
+            "MapAreaStateActor owns applying AreaCatalog state into workplace and input mode requests.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-portal-targets", "GodotTools/MapEditor/MapEditor/MainForm.GodotSync.cs",
+            text => text.Contains("node.RawProps[\"target_map\"]", StringComparison.Ordinal)
+                && text.Contains("node.RawProps[\"target_area\"]", StringComparison.Ordinal)
+                && text.Contains("TscnWriter.PatchFile", StringComparison.Ordinal),
+            "MapEditor writes Portal target_map/target_area back into map scenes.");
+        AddTextCheck(checks, godotRoot, "mapeditor-imports-portal-targets", "GodotTools/MapEditor/MapEditor/Godot/GodotMapImporter.cs",
+            text => text.Contains("TryGetValue(\"target_map\"", StringComparison.Ordinal)
+                && text.Contains("TryGetValue(\"target_area\"", StringComparison.Ordinal),
+            "MapEditor importer reads Portal target_map/target_area from map scenes.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-collision-metadata", "GodotTools/MapEditor/MapEditor/MainForm.cs",
+            text => text.Contains("metadata/collision_mode", StringComparison.Ordinal)
+                && text.Contains("metadata/collision_tile_path", StringComparison.Ordinal)
+                && text.Contains("metadata/collision_fgtex_path", StringComparison.Ordinal)
+                && text.Contains("res://CoreEngine/Maps/Resources/{fileBase}/collision_tile.json", StringComparison.Ordinal)
+                && text.Contains("res://CoreEngine/Maps/Resources/{fileBase}/collision_fgtex.json", StringComparison.Ordinal),
+            "MapEditor writes collision metadata and keeps collision JSON files under CoreEngine/Maps/Resources/<Map>.");
+        AddTextCheck(checks, godotRoot, "mapeditor-imports-collision-metadata", "GodotTools/MapEditor/MapEditor/Godot/GodotMapImporter.cs",
+            text => text.Contains("metadata/collision_mode", StringComparison.Ordinal)
+                && text.Contains("metadata/collision_tile_path", StringComparison.Ordinal)
+                && text.Contains("metadata/collision_fgtex_path", StringComparison.Ordinal),
+            "MapEditor importer reads collision metadata from map scenes.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-texture-transform-metadata", "GodotTools/MapEditor/MapEditor/MainForm.cs",
+            text => text.Contains("metadata/foreground_texture_anchor", StringComparison.Ordinal)
+                && text.Contains("metadata/foreground_texture_upscale", StringComparison.Ordinal)
+                && text.Contains("metadata/background_texture_anchor", StringComparison.Ordinal)
+                && text.Contains("metadata/background_texture_upscale", StringComparison.Ordinal),
+            "MapEditor writes foreground/background texture transform metadata.");
+        AddTextCheck(checks, godotRoot, "mapeditor-imports-texture-transform-metadata", "GodotTools/MapEditor/MapEditor/Godot/GodotMapImporter.cs",
+            text => text.Contains("metadata/foreground_texture_anchor", StringComparison.Ordinal)
+                && text.Contains("metadata/foreground_texture_upscale", StringComparison.Ordinal)
+                && text.Contains("metadata/background_texture_anchor", StringComparison.Ordinal)
+                && text.Contains("metadata/background_texture_upscale", StringComparison.Ordinal),
+            "MapEditor importer reads foreground/background texture transform metadata.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-portal-animation-fields", "GodotTools/MapEditor/MapEditor/MainForm.GodotSync.cs",
+            text => text.Contains("node.RawProps[\"portal_anim_dir\"]", StringComparison.Ordinal)
+                && text.Contains("node.RawProps[\"portal_anim_fps\"]", StringComparison.Ordinal)
+                && text.Contains("node.RawProps[\"portal_upscale\"]", StringComparison.Ordinal)
+                && text.Contains("TscnWriter.PatchFile(sceneAbsPath, scene, [\"portal_anim_dir\", \"portal_anim_fps\", \"portal_upscale\"])", StringComparison.Ordinal),
+            "MapEditor writes portal animation directory, fps, and visual upscale fields back into portal scene nodes.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-tile-map-data", "GodotTools/MapEditor/MapEditor/MainForm.GodotSync.cs",
+            text => text.Contains("tile_map_data", StringComparison.Ordinal)
+                && text.Contains("PatchTileMapDataAlternative", StringComparison.Ordinal)
+                && text.Contains("TscnWriter.PatchFile(sceneAbs, scene, [\"tile_map_data\"])", StringComparison.Ordinal),
+            "MapEditor writes edited TileMapLayer tile_map_data back into map scenes.");
+        AddTextCheck(checks, godotRoot, "mapeditor-imports-tile-map-data", "GodotTools/MapEditor/MapEditor/Godot/GodotMapImporter.cs",
+            text => text.Contains("TileMapLayer", StringComparison.Ordinal)
+                && text.Contains("tile_set", StringComparison.Ordinal)
+                && text.Contains("tile_map_data", StringComparison.Ordinal)
+                && text.Contains("DecodeTileMapData", StringComparison.Ordinal),
+            "MapEditor importer reads TileMapLayer tile_set and tile_map_data from map scenes.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-template-texture-fields", "GodotTools/MapEditor/MapEditor/MainForm.cs",
+            text => text.Contains("ApplyTemplateMapTexturePatch", StringComparison.Ordinal)
+                && text.Contains("\"background_texture\"", StringComparison.Ordinal)
+                && text.Contains("\"foreground_texture\"", StringComparison.Ordinal)
+                && text.Contains("\"template\"", StringComparison.Ordinal)
+                && text.Contains("TscnWriter.PatchFileWithExtResources", StringComparison.Ordinal),
+            "MapEditor writes TemplateRoomMap template, foreground_texture, and background_texture fields.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-room-texture-nodes", "GodotTools/MapEditor/MapEditor/MainForm.cs",
+            text => text.Contains("EnsureBackgroundLayerNodesInSceneFile", StringComparison.Ordinal)
+                && text.Contains("EnsureForegroundTextureWorldNodesInSceneFile", StringComparison.Ordinal)
+                && text.Contains("BackgroundLayer/BackgroundTexture", StringComparison.Ordinal)
+                && text.Contains("ForegroundTextureLayer/ForegroundTexture", StringComparison.Ordinal)
+                && text.Contains("ApplyTextureNodeTexturePatch", StringComparison.Ordinal),
+            "MapEditor writes ordinary-room background and foreground texture nodes in the expected runtime node paths.");
+        AddTextCheck(checks, godotRoot, "mapeditor-writes-background-tile-layer-visibility", "GodotTools/MapEditor/MapEditor/MainForm.cs",
+            text => text.Contains("TryWriteBackBackgroundTileLayerVisibility", StringComparison.Ordinal)
+                && text.Contains("TileMapLayer", StringComparison.Ordinal)
+                && text.Contains("node.RawProps[\"visible\"]", StringComparison.Ordinal)
+                && text.Contains("IsBackgroundTileLayerName", StringComparison.Ordinal),
+            "MapEditor writes background TileMapLayer visibility for imported map scenes.");
+        AddTextCheck(checks, godotRoot, "portal-runtime-consumes-mapeditor-portal-fields", "CoreEngine/Scripts/World/Portal.gd",
+            text => text.Contains("@export_file(\"room_link\") var target_map", StringComparison.Ordinal)
+                && text.Contains("@export var target_area", StringComparison.Ordinal)
+                && text.Contains("@export_dir var portal_anim_dir", StringComparison.Ordinal)
+                && text.Contains("@export var portal_anim_fps", StringComparison.Ordinal)
+                && text.Contains("@export var portal_upscale", StringComparison.Ordinal)
+                && text.Contains("_apply_portal_animation", StringComparison.Ordinal)
+                && text.Contains("_apply_portal_upscale", StringComparison.Ordinal)
+                && text.Contains("_resolve_portal_anim_dir", StringComparison.Ordinal)
+                && text.Contains("TYPE_LOAD_ROOM_REQUEST", StringComparison.Ordinal),
+            "Portal runtime consumes MapEditor portal targets and custom portal animation fields.");
+        AddTextCheck(checks, godotRoot, "template-room-map-consumes-texture-fields", "CoreEngine/Scripts/World/TemplateRoomMap.gd",
+            text => text.Contains("@export var template", StringComparison.Ordinal)
+                && text.Contains("@export var foreground_texture", StringComparison.Ordinal)
+                && text.Contains("@export var background_texture", StringComparison.Ordinal)
+                && text.Contains("_apply_foreground_texture", StringComparison.Ordinal)
+                && text.Contains("_apply_background", StringComparison.Ordinal)
+                && text.Contains("_apply_template_to_tiles", StringComparison.Ordinal),
+            "TemplateRoomMap consumes MapEditor-authored template and texture fields.");
+        AddTextCheck(checks, godotRoot, "map-runtime-surface-consumes-collision-metadata", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+            text => text.Contains("collision_fgtex_path", StringComparison.Ordinal)
+                && text.Contains("CollisionFromJson", StringComparison.Ordinal)
+                && text.Contains("load_collision_json", StringComparison.Ordinal)
+                && text.Contains("build_collision_from_json_data", StringComparison.Ordinal)
+                && text.Contains("selected_path_from_metadata", StringComparison.Ordinal),
+            "MapRuntimeSurface consumes collision metadata, selects MapEditor collision JSON paths, and builds CollisionFromJson.");
+        AddTextCheck(checks, godotRoot, "map-runtime-surface-owns-foreground-layer-adapter", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+            text => text.Contains("ensure_world_foreground_texture_sprite", StringComparison.Ordinal)
+                && text.Contains("ForegroundTextureLayer/ForegroundTexture", StringComparison.Ordinal)
+                && text.Contains("Sprite2D.new", StringComparison.Ordinal),
+            "MapRuntimeSurface adapts ForegroundTextureLayer/ForegroundTexture into a world Sprite2D.");
+        AddTextCheck(checks, godotRoot, "map-runtime-surface-consumes-texture-transform-metadata", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+            text => text.Contains("foreground_texture_anchor", StringComparison.Ordinal)
+                && text.Contains("foreground_texture_upscale", StringComparison.Ordinal)
+                && text.Contains("background_texture_upscale", StringComparison.Ordinal)
+                && text.Contains("BACKGROUND_PERSPECTIVE_SHADER_CODE", StringComparison.Ordinal)
+                && text.Contains("update_background_texture_focus", StringComparison.Ordinal),
+            "MapRuntimeSurface consumes foreground/background texture transform metadata.");
+        AddTextCheck(checks, godotRoot, "map-runtime-surface-owns-background-diagnostics", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+            text => text.Contains("print_background_diagnostics", StringComparison.Ordinal)
+                && text.Contains("BackgroundLayer/BackgroundTexture", StringComparison.Ordinal)
+                && text.Contains("viewport_size", StringComparison.Ordinal),
+            "MapRuntimeSurface owns BackgroundLayer/BackgroundTexture diagnostics.");
+        AddTextCheck(checks, godotRoot, "map-runtime-surface-applies-camera-bounds", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+            text => text.Contains("apply_camera_limits_from_metadata", StringComparison.Ordinal)
+                && text.Contains("map_world_bounds_rect", StringComparison.Ordinal)
+                && text.Contains("camera.limit_left", StringComparison.Ordinal)
+                && text.Contains("camera.limit_bottom", StringComparison.Ordinal),
+            "MapRuntimeSurface applies camera bounds from MapEditor collision/texture metadata.");
+        AddTextCheck(checks, godotRoot, "map-runtime-guard-resets-player-inside-bounds", "CoreEngine/Scripts/Actor/MapRuntimeGuard.gd",
+            text => text.Contains("map_world_bounds_rect", StringComparison.Ordinal)
+                && text.Contains("reset_entry", StringComparison.Ordinal)
+                && text.Contains("global_position", StringComparison.Ordinal)
+                && text.Contains("IsTransferred", StringComparison.Ordinal),
+            "MapRuntimeGuard owns player fall-out reset against MapEditor-derived map bounds.");
+        AddTextCheck(checks, godotRoot, "map-room-load-orchestrator-loads-map-scenes", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
+            text => text.Contains("load_room_with_progress", StringComparison.Ordinal)
+                && text.Contains("load_packed_scene_threaded", StringComparison.Ordinal)
+                && text.Contains("game.map = new_map", StringComparison.Ordinal)
+                && text.Contains("MetSys.current_layer", StringComparison.Ordinal)
+                && text.Contains("room_loaded.emit", StringComparison.Ordinal),
+            "MapRoomLoadOrchestrator owns threaded map scene replacement and MetSys layer sync.");
+        AddTextCheck(checks, godotRoot, "map-room-load-orchestrator-handles-generated-and-loop-rooms", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
+            text => text.Contains("loop_path", StringComparison.Ordinal)
+                && text.Contains("consume_loop_path", StringComparison.Ordinal)
+                && text.Contains("instantiate_room", StringComparison.Ordinal)
+                && text.Contains("GeneratedRoomFactoryScript.create", StringComparison.Ordinal),
+            "MapRoomLoadOrchestrator owns loop redirects and generated-room instantiation.");
+        AddTextCheck(checks, godotRoot, "map-room-lifecycle-publishes-room-events", "CoreEngine/Scripts/Actor/MapRoomLifecycleActor.gd",
+            text => text.Contains("TYPE_ROOM_LOADED", StringComparison.Ordinal)
+                && text.Contains("TYPE_LEVEL_EVENT_REQUEST", StringComparison.Ordinal)
+                && text.Contains("enter_random_level", StringComparison.Ordinal)
+                && text.Contains("exit_random_level", StringComparison.Ordinal)
+                && text.Contains("MetSys.last_player_position", StringComparison.Ordinal)
+                && text.Contains("MetSys.set_player_position", StringComparison.Ordinal),
+            "MapRoomLifecycleActor owns room-loaded publication, random-level transitions, and initial MetSys player-position sync.");
+        AddTextCheck(checks, godotRoot, "map-spawn-actor-owns-room-spawn-nodes", "CoreEngine/Scripts/Actor/MapSpawnActor.gd",
+            text => text.Contains("teleport_player_to_save_point_if_any", StringComparison.Ordinal)
+                && text.Contains("SavePoint", StringComparison.Ordinal)
+                && text.Contains("ensure_alice", StringComparison.Ordinal)
+                && text.Contains("AliceSpawn", StringComparison.Ordinal)
+                && text.Contains("AliceNPCScene", StringComparison.Ordinal),
+            "MapSpawnActor owns SavePoint and Alice/AliceSpawn room-node conventions.");
+        AddTextCheck(checks, godotRoot, "collision-layout-selects-mapeditor-paths", "CoreEngine/Scripts/Helper/Map/CollisionLayout.gd",
+            text => text.Contains("collision_mode", StringComparison.Ordinal)
+                && text.Contains("collision_tile_path", StringComparison.Ordinal)
+                && text.Contains("collision_fgtex_path", StringComparison.Ordinal)
+                && text.Contains("anchor_position", StringComparison.Ordinal),
+            "CollisionLayout performs pure selection/math for MapEditor collision and anchor metadata.");
+        AddTextCheck(checks, godotRoot, "game-delegates-map-runtime-surface", "CoreEngine/Scripts/Systems/Game.gd",
+            text => text.Contains("MapRuntimeSurfaceScript.apply_surface_metadata(map, player)", StringComparison.Ordinal)
+                && text.Contains("MapRuntimeSurfaceScript.update_background_texture_focus", StringComparison.Ordinal)
+                && text.Contains("MapRuntimeSurfaceScript.apply_camera_limits_from_metadata", StringComparison.Ordinal)
+                && text.Contains("MapRuntimeSurfaceScript.print_background_diagnostics", StringComparison.Ordinal),
+            "Game.gd delegates MapEditor collision, texture, and camera runtime work to MapRuntimeSurface.");
+        AddTextCheck(checks, godotRoot, "game-delegates-map-runtime-guard", "CoreEngine/Scripts/Systems/Game.gd",
+            text => text.Contains("MapRuntimeGuardScript", StringComparison.Ordinal)
+                && text.Contains("_map_runtime_guard.reset_entry(player)", StringComparison.Ordinal)
+                && text.Contains("_map_runtime_guard.tick(delta, map, player, map_changing)", StringComparison.Ordinal)
+                && text.Contains("MetSys.set_player_position(player.position)", StringComparison.Ordinal),
+            "Game.gd delegates fall-out bounds guard to MapRuntimeGuard and keeps the MetSys sync seam.");
+        AddTextCheck(checks, godotRoot, "game-delegates-map-room-loading", "CoreEngine/Scripts/Systems/Game.gd",
+            text => text.Contains("MapRoomLoadOrchestratorScript", StringComparison.Ordinal)
+                && text.Contains("_map_room_loader.load_room_with_progress", StringComparison.Ordinal)
+                && text.Contains("_map_room_loader.instantiate_room", StringComparison.Ordinal)
+                && text.Contains("super._load_room(effective)", StringComparison.Ordinal)
+                && !text.Contains("func reset_map_starting_coords", StringComparison.Ordinal),
+            "Game.gd delegates map room loading and generated/loop room instantiation to MapRoomLoadOrchestrator.");
+        AddTextCheck(checks, godotRoot, "game-delegates-map-spawn-nodes", "CoreEngine/Scripts/Systems/Game.gd",
+            text => text.Contains("MapSpawnActorScript", StringComparison.Ordinal)
+                && text.Contains("MapSpawnActorScript.teleport_player_to_save_point_if_any", StringComparison.Ordinal)
+                && text.Contains("MapSpawnActorScript.ensure_alice", StringComparison.Ordinal),
+            "Game.gd delegates SavePoint and Alice room-node conventions to MapSpawnActor.");
+        AddTextCheck(checks, godotRoot, "game-delegates-map-area-state", "CoreEngine/Scripts/Systems/Game.gd",
+            text => text.Contains("MapAreaStateActorScript.apply_defaults", StringComparison.Ordinal)
+                && text.Contains("MapAreaStateActorScript.apply_initial_area", StringComparison.Ordinal)
+                && text.Contains("MapAreaStateActorScript.apply_area", StringComparison.Ordinal)
+                && text.Contains("MapAreaStateActorScript.current_area_id", StringComparison.Ordinal)
+                && !text.Contains("AreaCatalog", StringComparison.Ordinal)
+                && !text.Contains("AreaDef", StringComparison.Ordinal),
+            "Game.gd delegates area state/catalog application to MapAreaStateActor.");
+        AddTextCheck(checks, godotRoot, "game-delegates-map-room-lifecycle", "CoreEngine/Scripts/Systems/Game.gd",
+            text => text.Contains("MapRoomLifecycleActorScript", StringComparison.Ordinal)
+                && text.Contains("_map_room_lifecycle.reset()", StringComparison.Ordinal)
+                && text.Contains("_map_room_lifecycle.publish_room_entered", StringComparison.Ordinal)
+                && !text.Contains("enter_random_level", StringComparison.Ordinal)
+                && !text.Contains("exit_random_level", StringComparison.Ordinal)
+                && !text.Contains("MetSys.last_player_position", StringComparison.Ordinal),
+            "Game.gd delegates room lifecycle publication and random-level state to MapRoomLifecycleActor.");
+        AddTextCheck(checks, godotRoot, "generated-room-factory-handles-gen-rooms", "CoreEngine/Scripts/Actor/GeneratedRoomFactory.gd",
+            text => text.Contains("path.begins_with(\"GEN\")", StringComparison.Ordinal)
+                && text.Contains("CoreEngine/Maps/Junction.tscn", StringComparison.Ordinal)
+                && text.Contains("apply_config", StringComparison.Ordinal),
+            "GeneratedRoomFactory owns runtime-only GEN room construction from Junction.tscn.");
+        AddTextCheck(checks, godotRoot, "room-load-orchestrator-delegates-generated-room-factory", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
+            text => text.Contains("GeneratedRoomFactoryScript.can_create(effective)", StringComparison.Ordinal)
+                && text.Contains("GeneratedRoomFactoryScript.create(effective)", StringComparison.Ordinal),
+            "MapRoomLoadOrchestrator delegates generated room creation to GeneratedRoomFactory.");
+        AddMapEditorDataLocationChecks(checks, godotRoot, project);
 
         var entryRooms = BuildRuntimeEntryRooms(godotRoot, uidIndex, mapSceneSet);
         foreach (var entry in entryRooms)
@@ -898,7 +1123,7 @@ public static class CliEntry
             ProjectFileExists = File.Exists(Path.Combine(godotRoot, "project.godot")),
             GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
             VerificationKind = "static-game-effect",
-            ProofScope = "Static verifier: checks that imported map/portal data lines up with CoreEngine script surfaces that consume target_map and load rooms. It does not execute a live player transition.",
+            ProofScope = "Static verifier: checks that imported MapEditor map/portal/collision metadata lines up with CoreEngine script surfaces that consume target_map, target_area, collision JSON, texture anchors, and generated rooms. It does not execute a live player transition.",
             MapCount = mapScenes.Count,
             PortalCount = project.Maps.Sum(x => x.Portals.Count),
             LinkCount = project.Links.Count,
@@ -945,6 +1170,99 @@ public static class CliEntry
             Path = relativePath,
             Detail = detail
         });
+    }
+
+    private static void AddMapEditorDataLocationChecks(
+        List<MapRuntimeCheck> checks,
+        string godotRoot,
+        Models.MapProject project)
+    {
+        foreach (var map in project.Maps
+            .Where(x => !string.IsNullOrWhiteSpace(x.ScenePath))
+            .OrderBy(x => x.ScenePath, StringComparer.OrdinalIgnoreCase))
+        {
+            checks.Add(new MapRuntimeCheck
+            {
+                Id = "map-scene-location-" + SanitizeCheckId(map.ScenePath),
+                Passed = map.ScenePath.StartsWith("res://CoreEngine/Maps/", StringComparison.Ordinal)
+                    && File.Exists(ToAbsoluteGodotPath(godotRoot, map.ScenePath)),
+                Path = map.ScenePath,
+                Detail = $"Imported map scene must stay under CoreEngine/Maps and exist: {map.ScenePath}"
+            });
+
+            if (map.CollisionUsed == Models.CollisionMode.ForegroundTexture && string.IsNullOrWhiteSpace(map.ForegroundTextureCollisionDataPath))
+            {
+                checks.Add(new MapRuntimeCheck
+                {
+                    Id = "map-fg-collision-path-required-" + SanitizeCheckId(map.ScenePath),
+                    Passed = false,
+                    Path = map.ScenePath,
+                    Detail = $"Foreground-texture collision mode requires collision_fgtex_path on {map.ScenePath}."
+                });
+            }
+        }
+
+        var collisionPaths = project.Maps
+            .SelectMany(map => new[]
+            {
+                (Path: map.TileCollisionDataPath, ExpectedFileName: "collision_tile.json", Source: map.ScenePath),
+                (Path: map.ForegroundTextureCollisionDataPath, ExpectedFileName: "collision_fgtex.json", Source: map.ScenePath)
+            })
+            .Where(x => !string.IsNullOrWhiteSpace(x.Path))
+            .DistinctBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in collisionPaths)
+        {
+            var resPath = item.Path.Trim();
+            var absPath = ToAbsoluteGodotPath(godotRoot, resPath);
+            var locationOk = resPath.StartsWith("res://CoreEngine/Maps/Resources/", StringComparison.Ordinal)
+                && resPath.EndsWith("/" + item.ExpectedFileName, StringComparison.OrdinalIgnoreCase);
+            checks.Add(new MapRuntimeCheck
+            {
+                Id = "mapeditor-collision-path-location-" + SanitizeCheckId(resPath),
+                Passed = locationOk,
+                Path = resPath,
+                Detail = $"MapEditor collision JSON should stay under CoreEngine/Maps/Resources/<Map>/{item.ExpectedFileName}: {resPath}"
+            });
+            checks.Add(new MapRuntimeCheck
+            {
+                Id = "mapeditor-collision-json-exists-" + SanitizeCheckId(resPath),
+                Passed = File.Exists(absPath),
+                Path = resPath,
+                Detail = $"MapEditor collision JSON exists for imported metadata path: {resPath}"
+            });
+            checks.Add(new MapRuntimeCheck
+            {
+                Id = "mapeditor-collision-json-shape-" + SanitizeCheckId(resPath),
+                Passed = File.Exists(absPath) && LooksLikeCollisionLayoutJson(absPath),
+                Path = resPath,
+                Detail = $"MapEditor collision JSON has room dimensions plus solid grid or polygon data: {resPath}"
+            });
+        }
+    }
+
+    private static bool LooksLikeCollisionLayoutJson(string absPath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(absPath);
+            using var doc = JsonDocument.Parse(stream);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return false;
+            var root = doc.RootElement;
+            var hasWidth = root.TryGetProperty("RoomWidth", out _) || root.TryGetProperty("roomWidth", out _);
+            var hasHeight = root.TryGetProperty("RoomHeight", out _) || root.TryGetProperty("roomHeight", out _);
+            var hasSolid = root.TryGetProperty("Solid", out var solid) && solid.ValueKind == JsonValueKind.Array
+                || root.TryGetProperty("solid", out solid) && solid.ValueKind == JsonValueKind.Array;
+            var hasPolygons = root.TryGetProperty("Polygons", out var polys) && polys.ValueKind == JsonValueKind.Array
+                || root.TryGetProperty("polygons", out polys) && polys.ValueKind == JsonValueKind.Array;
+            return hasWidth && hasHeight && (hasSolid || hasPolygons);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static List<MapRuntimeEntryRoom> BuildRuntimeEntryRooms(string godotRoot, Dictionary<string, string> uidIndex, HashSet<string> mapSceneSet)

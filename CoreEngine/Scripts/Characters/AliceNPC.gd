@@ -1,5 +1,10 @@
 extends CharacterBody2D
+class_name AliceNPC
+
 const BulletScene = preload("res://CoreEngine/Objects/Bullet.tscn")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const CombatFactionTypesScript = preload("res://CoreEngine/Scripts/Contract/CombatFactionTypes.gd")
+const DialogueActionTypesScript = preload("res://CoreEngine/Scripts/Contract/DialogueActionTypes.gd")
 
 @export var auto_tune_to_room: bool = true
 @export var auto_scale_sprite: bool = true
@@ -28,7 +33,7 @@ const BulletScene = preload("res://CoreEngine/Objects/Bullet.tscn")
 @export var story_dialogue_text: String = "下午好，今天天气也很不错。"
 @export var npc_dialogue_text: String = "请问您需要买什么呢？"
 @export var interaction_dist: float = 64.0
-var _dialogue_manager: Node
+var _workbench: WorkbenchService
 var _player: Node2D
 var _in_interaction_range: bool = false
 
@@ -46,13 +51,13 @@ var _shoot_in: float = 0.0
 @onready var _anim: AnimationPlayer = $AnimationPlayer
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _collider: CollisionShape2D = $CollisionShape2D
-@onready var combatant: Node = $Combatant
+@onready var combatant: Combatant = $Combatant
 
 signal defeated(npc: Node)
 
 func _ready() -> void:
 	_player = get_tree().get_first_node_in_group(&"player") as Node2D
-	_dialogue_manager = get_tree().root.find_child("DialogueManagerActor", true, false)
+	_workbench = WorkbenchService.get_singleton()
 	_rng.randomize()
 	_auto_tune()
 	_apply_visual_tuning()
@@ -71,19 +76,20 @@ func set_enemy_mode(enemy_mode: bool) -> void:
 	is_enemy = enemy_mode
 	var status_bar := get_node_or_null(^"OverheadStatusBar") as CanvasItem
 	if is_enemy:
-		if not is_in_group(&"enemy"):
-			add_to_group(&"enemy")
+		if not is_in_group(CombatFactionTypesScript.ENEMY):
+			add_to_group(CombatFactionTypesScript.ENEMY)
 		shoot_enabled = true
 		_anim.play("Idle")
 	else:
-		if is_in_group(&"enemy"):
-			remove_from_group(&"enemy")
+		if is_in_group(CombatFactionTypesScript.ENEMY):
+			remove_from_group(CombatFactionTypesScript.ENEMY)
 		shoot_enabled = false
 		speed = 0.0
 		velocity = Vector2.ZERO
 		_anim.play("Idle")
 	if status_bar != null:
 		status_bar.visible = is_enemy
+	_sync_combatant_facing()
 
 
 func get_facing_dir() -> Vector2:
@@ -109,6 +115,7 @@ func _physics_process(delta: float) -> void:
 	
 	if is_on_wall():
 		_dir *= -1
+		_sync_combatant_facing()
 		_reset_change_timer()
 	elif _has_bounds:
 		var x := global_position.x
@@ -117,34 +124,54 @@ func _physics_process(delta: float) -> void:
 		if x < left:
 			global_position.x = left
 			_dir = 1
+			_sync_combatant_facing()
 			_reset_change_timer()
 		elif x > right:
 			global_position.x = right
 			_dir = -1
+			_sync_combatant_facing()
 			_reset_change_timer()
 	
 	_play_walk_animation()
 
 func _handle_interaction() -> void:
-	if not is_instance_valid(_player) or not is_instance_valid(_dialogue_manager):
+	if not is_instance_valid(_player) or _workbench == null:
 		return
 		
 	var dist = global_position.distance_to(_player.global_position)
 	if dist < interaction_dist:
 		if not _in_interaction_range:
 			_in_interaction_range = true
-			_dialogue_manager.show_prompt("按 E 对话")
+			_send_dialogue_action({
+				"action": DialogueActionTypesScript.SHOW_PROMPT,
+				"text": "按 E 对话",
+			})
 		
 		if Input.is_action_just_pressed("interact"):
 			_face_player()
-			if _dialogue_manager.has_method("request_dialogue"):
-				_dialogue_manager.call("request_dialogue", &"alice", speaker_name, story_dialogue_text, npc_dialogue_text)
+			_send_dialogue_action({
+				"action": DialogueActionTypesScript.REQUEST_DIALOGUE,
+				"dialogue_id": &"alice",
+				"speaker": speaker_name,
+				"story_text": story_dialogue_text,
+				"npc_text": npc_dialogue_text,
+			})
 	else:
 		if _in_interaction_range:
 			_in_interaction_range = false
-			_dialogue_manager.hide_prompt()
-			if _dialogue_manager.has_method("end_dialogue"):
-				_dialogue_manager.end_dialogue()
+			_send_dialogue_action({
+				"action": DialogueActionTypesScript.HIDE_PROMPT,
+			})
+			_send_dialogue_action({
+				"action": DialogueActionTypesScript.END_DIALOGUE,
+			})
+
+func _send_dialogue_action(payload: Dictionary) -> void:
+	if _workbench == null:
+		return
+	payload["type"] = MessageTypes.TYPE_DIALOGUE_ACTION_REQUEST
+	payload["source"] = name
+	_workbench.send(payload)
 
 func _face_player() -> void:
 	if not is_instance_valid(_player):
@@ -153,6 +180,7 @@ func _face_player() -> void:
 	if dir_to_player == 0.0:
 		return
 	_dir = -1 if dir_to_player < 0.0 else 1
+	_sync_combatant_facing()
 	_set_idle_facing(_dir)
 
 func _set_idle_facing(dir: int) -> void:
@@ -173,7 +201,7 @@ func _reset_shoot_timer() -> void:
 	_shoot_in = maxf(0.05, shoot_interval_seconds)
 
 func _fire_bullet() -> void:
-	var b := BulletScene.instantiate() as Node2D
+	var b := BulletScene.instantiate() as Bullet
 	if b == null:
 		return
 	
@@ -182,18 +210,18 @@ func _fire_bullet() -> void:
 		return
 	parent.add_child(b)
 	b.global_position = global_position + bullet_spawn_offset
-	b.set("source_faction", &"enemy")
+	b.set("source_faction", CombatFactionTypesScript.ENEMY)
 	b.set("damage", 10.0)
 	
 	var angle := _rng.randf_range(0.0, TAU)
 	var dir := Vector2(cos(angle), sin(angle))
 	
 	b.set("speed", bullet_speed)
-	if b.has_method("fire"):
-		b.call("fire", dir)
+	b.fire(dir)
 
 func _pick_direction() -> void:
 	_dir = -1 if _rng.randf() < 0.5 else 1
+	_sync_combatant_facing()
 	_reset_change_timer()
 
 func _reset_change_timer() -> void:
@@ -411,6 +439,7 @@ func _find_node_in_ancestors(name: NodePath) -> Node:
 func _setup_combatant() -> void:
 	if not is_instance_valid(combatant):
 		return
+	_sync_combatant_facing()
 	if combatant.has_signal("died"):
 		var cb := Callable(self, &"_on_died")
 		if not combatant.died.is_connected(cb):
@@ -423,6 +452,10 @@ func _on_died() -> void:
 func apply_raw_damage(raw_damage: float) -> float:
 	if not is_enemy:
 		return 0.0
-	if is_instance_valid(combatant) and combatant.has_method("apply_raw_damage"):
-		return float(combatant.apply_raw_damage(raw_damage))
+	if is_instance_valid(combatant):
+		return combatant.apply_raw_damage(raw_damage)
 	return float(raw_damage)
+
+func _sync_combatant_facing() -> void:
+	if is_instance_valid(combatant):
+		combatant.set_facing_dir(get_facing_dir())

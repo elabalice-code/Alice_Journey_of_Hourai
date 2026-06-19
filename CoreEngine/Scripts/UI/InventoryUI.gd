@@ -1,6 +1,9 @@
 extends Control
+class_name InventoryUI
 
 const PlayerInventory = preload("res://CoreEngine/Scripts/Items/PlayerInventory.gd")
+const EquipmentShapeScript = preload("res://CoreEngine/Scripts/Helper/Inventory/EquipmentShape.gd")
+const EquipmentSlotTypesScript = preload("res://CoreEngine/Scripts/Contract/EquipmentSlotTypes.gd")
 
 @onready var _dim: ColorRect = $Dim
 @onready var _tab_equipment: Button = $Window/RootVBox/Header/TabEquipment
@@ -123,7 +126,7 @@ func _build_equip_slots() -> void:
 	_equip_buttons.clear()
 	for c in _equip_grid.get_children():
 		c.queue_free()
-	var slots: Array[StringName] = [ &"head", &"clothes", &"shoes", &"weapon" ]
+	var slots: Array[StringName] = EquipmentShapeScript.slots()
 	var names := {
 		&"head": "头饰",
 		&"clothes": "衣服",
@@ -132,7 +135,7 @@ func _build_equip_slots() -> void:
 	}
 	for s in slots:
 		var b := _make_slot_button()
-		b.text = names.get(s, String(s))
+		b.text = names.get(s, EquipmentSlotTypesScript.display_name(s))
 		b.pressed.connect(Callable(self, &"_on_equip_slot_pressed").bind(s))
 		_equip_grid.add_child(b)
 		_equip_buttons[s] = b
@@ -203,7 +206,7 @@ func _on_equip_slot_pressed(slot: StringName) -> void:
 func _on_rune_slot_pressed(index: int) -> void:
 	if _inventory == null:
 		return
-	if index < PlayerInventory.LOCKED_RUNE_SLOT_COUNT:
+	if index < InventoryData.LOCKED_RUNE_SLOT_COUNT:
 		return
 	if _selected_origin == &"bag" and _selected_index >= 0:
 		_inventory.place_rune_from_bag(_selected_index, index)
@@ -249,7 +252,7 @@ func _refresh() -> void:
 		var rune_btn := _rune_buttons[i]
 		if not is_instance_valid(rune_btn):
 			continue
-		if i < PlayerInventory.LOCKED_RUNE_SLOT_COUNT:
+		if i < InventoryData.LOCKED_RUNE_SLOT_COUNT:
 			rune_btn.icon = null
 			rune_btn.text = "锁定"
 			rune_btn.disabled = true

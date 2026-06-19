@@ -1,11 +1,11 @@
 extends RefCounted
 class_name CombatManagerActor
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 const CombatFlowProducersScript = preload("res://CoreEngine/Scripts/Signal/CombatFlow/CombatFlowProducers.gd")
 const CombatFlowRouterScript = preload("res://CoreEngine/Scripts/Signal/CombatFlow/CombatFlowRouter.gd")
-const DamageFormulaScript = preload("res://CoreEngine/Scripts/Helper/Combat/DamageFormula.gd")
+const CombatStateSnapshotScript = preload("res://CoreEngine/Scripts/Helper/Combat/CombatStateSnapshot.gd")
+const CombatantPortScript = preload("res://CoreEngine/Scripts/Actor/CombatantPort.gd")
 
 var _workbench: WorkbenchService
 var _last_state_by_target_path: Dictionary = {}
@@ -68,34 +68,12 @@ func apply_damage(target: Node, amount: float, attacker_dir: Vector2 = Vector2.Z
 	return dealt
 
 func _apply_damage_to_target_combatant(target: Node, amount: float, attacker_dir: Vector2) -> float:
-	var c := target.get_node_or_null(^"Combatant")
-	if c != null and is_instance_valid(c):
-		var raw := float(amount)
-		if raw <= 0.0:
-			return 0.0
-		var armor := 0.0
-		if c.has_method(&"get_total_armor"):
-			armor = float(c.call(&"get_total_armor"))
-		if c.has_variable(&"blocking") and bool(c.get("blocking")):
-			if c.has_method(&"_is_front_attack") and bool(c.call(&"_is_front_attack", attacker_dir)):
-				if c.has_method(&"get_block_armor"):
-					armor += float(c.call(&"get_block_armor"))
-		var actual := DamageFormulaScript.after_armor(raw, armor)
-		if c.has_method(&"apply_damage_from_actor"):
-			return float(c.call(&"apply_damage_from_actor", actual))
-		if c.has_method(&"apply_hit"):
-			return float(c.call(&"apply_hit", raw, attacker_dir))
-		if c.has_method(&"apply_raw_damage"):
-			return float(c.call(&"apply_raw_damage", raw))
-	return 0.0
+	var port: CombatantPort = CombatantPortScript.from_target(target)
+	return port.apply_damage(amount, attacker_dir)
 
 func _get_target_hp(target: Node) -> float:
-	if target.has_variable(&"hp"):
-		return float(target.get("hp"))
-	var c := target.get_node_or_null(^"Combatant")
-	if c != null and is_instance_valid(c) and c.has_variable(&"hp"):
-		return float(c.get("hp"))
-	return 0.0
+	var port: CombatantPort = CombatantPortScript.from_target(target)
+	return port.hp()
 
 func _sync_global_combat_data(target: Node) -> void:
 	if _workbench == null:
@@ -105,14 +83,13 @@ func _sync_global_combat_data(target: Node) -> void:
 		return
 	if not target.is_in_group(&"player"):
 		return
-	var c := target.get_node_or_null(^"Combatant")
-	if c == null or not is_instance_valid(c):
+	var port: CombatantPort = CombatantPortScript.from_target(target)
+	if not port.is_valid():
 		return
-	var data: ActorFramework.CombatData = global_wp.combat
-	data.hp = float(c.get("hp"))
-	data.max_hp = float(c.get("max_hp"))
-	if c.has_method(&"get_total_armor"):
-		data.defense = float(c.call(&"get_total_armor"))
+	var data: CombatData = global_wp.combat
+	data.hp = port.hp()
+	data.max_hp = port.max_hp()
+	data.defense = port.total_armor()
 
 func _sync_player_combat_to_workplace() -> void:
 	if _workbench == null:
@@ -132,22 +109,17 @@ func request_sync(target: Node) -> void:
 func _emit_combat_state(target: Node, force: bool) -> void:
 	if _workbench == null or target == null or not is_instance_valid(target):
 		return
-	var c := target.get_node_or_null(^"Combatant")
-	if c == null or not is_instance_valid(c):
+	var port: CombatantPort = CombatantPortScript.from_target(target)
+	if not port.is_valid():
 		return
-	var hp := float(c.get("hp"))
-	var max_hp := float(c.get("max_hp"))
-	var armor := 0.0
-	if c.has_method(&"get_total_armor"):
-		armor = float(c.call(&"get_total_armor"))
+	var state := port.snapshot()
+	var hp := float(state.get("hp", 0.0))
+	var max_hp := float(state.get("max_hp", 0.0))
+	var armor := float(state.get("armor", 0.0))
 	var key := str(target.get_path())
 	var last: Dictionary = _last_state_by_target_path.get(key, {}) as Dictionary
-	var snapshot := {
-		"hp": hp,
-		"max_hp": max_hp,
-		"armor": armor
-	}
-	if not force and last == snapshot:
+	var snapshot := CombatStateSnapshotScript.make(hp, max_hp, armor)
+	if not CombatStateSnapshotScript.should_emit(last, snapshot, force):
 		return
 	_last_state_by_target_path[key] = snapshot
 	_workbench.send({

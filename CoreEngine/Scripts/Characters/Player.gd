@@ -1,8 +1,9 @@
 # This script is based on the default CharacterBody2D template. Not much interesting happening here.
 extends CharacterBody2D
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const CombatFactionTypesScript = preload("res://CoreEngine/Scripts/Contract/CombatFactionTypes.gd")
+const EquipmentSlotTypesScript = preload("res://CoreEngine/Scripts/Contract/EquipmentSlotTypes.gd")
 const BulletScene = preload("res://CoreEngine/Objects/Bullet.tscn")
 const FireAngleRule = preload("res://CoreEngine/Scripts/Input/FireAngleRule.gd")
 
@@ -40,7 +41,7 @@ var _input_mode: StringName = &"side_scrolling"
 @export var aim_simultaneous_threshold_seconds: float = 0.2
 @export var top_down_speed: float = 320.0
 
-@onready var combatant: Node = $Combatant
+@onready var combatant: Combatant = $Combatant
 @onready var _sprite: Sprite2D = $Sprite2D
 @onready var _collision_shape: CollisionShape2D = $CollisionShape2D
 
@@ -122,10 +123,10 @@ func _on_workplace(workplace) -> void:
 			if new_mode != &"":
 				_input_mode = new_mode
 				_defending = false
-				if is_instance_valid(combatant) and combatant.has_method("set_blocking"):
-					combatant.call("set_blocking", false)
+				if is_instance_valid(combatant):
+					combatant.set_blocking(false)
 
-func _apply_player_data(data: ActorFramework.PlayerData) -> void:
+func _apply_player_data(data: PlayerData) -> void:
 	if data == null:
 		return
 	speed_min_current = data.speed_min
@@ -210,8 +211,10 @@ func _physics_process(delta: float) -> void:
 	
 	if velocity.x > 1:
 		$Sprite2D.flip_h = false
+		_sync_combatant_facing()
 	elif velocity.x < -1:
 		$Sprite2D.flip_h = true
+		_sync_combatant_facing()
 
 func _physics_process_top_down(delta: float) -> void:
 	var dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
@@ -229,8 +232,10 @@ func _physics_process_top_down(delta: float) -> void:
 	
 	if velocity.x > 1:
 		$Sprite2D.flip_h = false
+		_sync_combatant_facing()
 	elif velocity.x < -1:
 		$Sprite2D.flip_h = true
+		_sync_combatant_facing()
 
 func kill():
 	IsTransferred = true
@@ -270,20 +275,18 @@ func _setup_combatant() -> void:
 		var cb := Callable(self, &"_on_player_died")
 		if not combatant.died.is_connected(cb):
 			combatant.died.connect(cb)
-	if combatant.has_method("equip"):
-		combatant.equip(&"armor", {"id": &"starter_armor", "name": "新手护甲", "armor": 10.0})
-		combatant.equip(&"shield", {"id": &"starter_shield", "name": "新手盾牌", "block_armor": 100.0})
+	combatant.equip(EquipmentSlotTypesScript.ARMOR, {"id": &"starter_armor", "name": "新手护甲", "armor": 10.0})
+	combatant.equip(EquipmentSlotTypesScript.SHIELD, {"id": &"starter_shield", "name": "新手盾牌", "block_armor": 100.0})
+	_sync_combatant_facing()
 
 func _toggle_starter_armor() -> void:
 	if not is_instance_valid(combatant):
 		return
-	if not combatant.has_method("get_equipped") or not combatant.has_method("equip") or not combatant.has_method("unequip"):
-		return
-	var current: Dictionary = combatant.get_equipped(&"armor") as Dictionary
+	var current: Dictionary = combatant.get_equipped(EquipmentSlotTypesScript.ARMOR) as Dictionary
 	if StringName(current.get("id", &"")) == &"starter_armor":
-		combatant.unequip(&"armor")
+		combatant.unequip(EquipmentSlotTypesScript.ARMOR)
 	else:
-		combatant.equip(&"armor", {"id": &"starter_armor", "name": "新手护甲", "armor": 10.0})
+		combatant.equip(EquipmentSlotTypesScript.ARMOR, {"id": &"starter_armor", "name": "新手护甲", "armor": 10.0})
 
 func _on_player_died() -> void:
 	call_deferred(&"_handle_player_died")
@@ -301,13 +304,13 @@ func _handle_player_died() -> void:
 	kill()
 
 func apply_raw_damage(raw_damage: float) -> float:
-	if is_instance_valid(combatant) and combatant.has_method("apply_raw_damage"):
-		return float(combatant.apply_raw_damage(raw_damage))
+	if is_instance_valid(combatant):
+		return combatant.apply_raw_damage(raw_damage)
 	return float(raw_damage)
 
 func apply_hit(raw_damage: float, attacker_dir: Vector2) -> float:
-	if is_instance_valid(combatant) and combatant.has_method("apply_hit"):
-		return float(combatant.apply_hit(raw_damage, attacker_dir))
+	if is_instance_valid(combatant):
+		return combatant.apply_hit(raw_damage, attacker_dir)
 	return apply_raw_damage(raw_damage)
 
 func _try_fire_bullet() -> void:
@@ -319,7 +322,7 @@ func _try_fire_bullet() -> void:
 	_fire_bullet()
 
 func _fire_bullet() -> void:
-	var b := BulletScene.instantiate() as Node2D
+	var b := BulletScene.instantiate() as Bullet
 	if b == null:
 		return
 	var parent := get_parent()
@@ -330,12 +333,11 @@ func _fire_bullet() -> void:
 	if is_instance_valid(_collision_shape):
 		center = _collision_shape.global_position
 	b.global_position = center + bullet_spawn_offset
-	b.set("source_faction", &"player")
+	b.set("source_faction", CombatFactionTypesScript.PLAYER)
 	b.set("damage", 10.0)
 	b.set("speed", bullet_speed)
 	var dir := _get_fire_direction()
-	if b.has_method("fire"):
-		b.call("fire", dir)
+	b.fire(dir)
 
 func _update_fire_angle_rule() -> void:
 	var up_action := "aim_up"
@@ -393,8 +395,8 @@ func _update_defense_state() -> void:
 	if _input_mode == &"top_down" or _input_mode == &"top_down_shooter":
 		if _defending:
 			_defending = false
-			if is_instance_valid(combatant) and combatant.has_method("set_blocking"):
-				combatant.call("set_blocking", false)
+			if is_instance_valid(combatant):
+				combatant.set_blocking(false)
 		return
 	var locked := Input.is_action_pressed("aim_up") or Input.is_action_pressed("move_down")
 	var facing := 1
@@ -409,10 +411,14 @@ func _update_defense_state() -> void:
 	if want_defense == _defending:
 		return
 	_defending = want_defense
-	if is_instance_valid(combatant) and combatant.has_method("set_blocking"):
-		combatant.call("set_blocking", _defending)
+	if is_instance_valid(combatant):
+		combatant.set_blocking(_defending)
 
 func get_facing_dir() -> Vector2:
 	if is_instance_valid(_sprite) and _sprite.flip_h:
 		return Vector2.LEFT
 	return Vector2.RIGHT
+
+func _sync_combatant_facing() -> void:
+	if is_instance_valid(combatant):
+		combatant.set_facing_dir(get_facing_dir())

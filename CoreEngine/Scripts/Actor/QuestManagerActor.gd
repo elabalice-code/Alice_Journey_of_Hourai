@@ -1,7 +1,6 @@
 extends RefCounted
 class_name QuestManagerActor
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 const QuestFlowProducersScript = preload("res://CoreEngine/Scripts/Signal/QuestFlow/QuestFlowProducers.gd")
 const QuestFlowRouterScript = preload("res://CoreEngine/Scripts/Signal/QuestFlow/QuestFlowRouter.gd")
@@ -23,12 +22,12 @@ func _on_workplace(workplace) -> void:
 	var global_wp := _workbench.get_workplace()
 	if global_wp == null:
 		return
-	var quest_data: ActorFramework.QuestData = global_wp.quest
+	var quest_data: QuestData = global_wp.quest
 	var frame: QuestFlowSignalFrame = QuestFlowProducersScript.from_workplace(workplace)
 	var intent: QuestFlowIntent = QuestFlowRouterScript.route(frame, quest_data)
 	_execute_intent(quest_data, intent)
 
-func _execute_intent(quest_data: ActorFramework.QuestData, intent: QuestFlowIntent) -> void:
+func _execute_intent(quest_data: QuestData, intent: QuestFlowIntent) -> void:
 	if quest_data == null or intent == null or not intent.is_valid():
 		return
 	var quest_id: StringName = intent.payload.get("quest_id", &"")

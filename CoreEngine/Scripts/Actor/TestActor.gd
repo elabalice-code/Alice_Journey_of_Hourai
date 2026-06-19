@@ -1,7 +1,6 @@
 extends RefCounted
 class_name TestActor
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 const KEY_AGENT_DEBUG_ENABLED: StringName = &"agent_debug_enabled"
@@ -235,8 +234,8 @@ func _execute_command(command: Dictionary) -> Dictionary:
 			if path.is_empty():
 				return _fail_command(action, "path is empty")
 			_workbench.register_workplace_data(&"runtime_event_project_path", path)
-			var runtime_flow: Variant = _workbench.get_service(&"runtime_event_flow")
-			if runtime_flow != null and runtime_flow.has_method("reload_project"):
+			var runtime_flow := _workbench.get_service(&"runtime_event_flow") as RuntimeEventFlowActor
+			if runtime_flow != null:
 				runtime_flow.reload_project()
 			return _ok_command(action, "runtime event project updated")
 		"set_workplace_data":
@@ -468,7 +467,7 @@ func _write_snapshot(reason: String) -> void:
 func _build_snapshot(reason: String) -> Dictionary:
 	var game: Game = _workbench.get_service(&"game") as Game
 	var player: Node2D = _workbench.get_service(&"player") as Node2D
-	var wp: ActorFramework.WorkPlace = _workbench.get_workplace()
+	var wp: WorkPlace = _workbench.get_workplace()
 	return {
 		"source": "TestActor",
 		"reason": reason,
@@ -512,11 +511,11 @@ func _capture_player(player: Node2D) -> Dictionary:
 	return data
 
 func _capture_dialogue_state() -> Dictionary:
-	var manager: Node = _workbench.get_tree().root.find_child("DialogueManagerActor", true, false)
+	var manager := _workbench.get_tree().root.find_child("DialogueManagerActor", true, false) as DialogueManagerActor
 	if manager == null:
 		return {}
 	return {
-		"is_open": bool(manager.is_dialogue_open() if manager.has_method("is_dialogue_open") else false),
+		"is_open": manager.is_dialogue_open(),
 		"active_mode": str(manager.get("_active_mode")) if _has_property(manager, &"_active_mode") else "",
 		"active_dialogue_id": str(manager.get("_active_npc_id")) if _has_property(manager, &"_active_npc_id") else ""
 	}
@@ -601,7 +600,7 @@ func _capture_collision_areas(game: Game) -> Array:
 		})
 	return out
 
-func _capture_workplace(wp: ActorFramework.WorkPlace) -> Dictionary:
+func _capture_workplace(wp: WorkPlace) -> Dictionary:
 	if wp == null:
 		return {}
 	return {

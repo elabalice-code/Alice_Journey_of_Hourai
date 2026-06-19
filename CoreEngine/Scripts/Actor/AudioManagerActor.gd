@@ -2,6 +2,7 @@ extends RefCounted
 class_name AudioManagerActor
 
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const AudioActionTypesScript = preload("res://CoreEngine/Scripts/Contract/AudioActionTypes.gd")
 
 var _workbench: WorkbenchService
 
@@ -26,7 +27,7 @@ func _on_workplace(workplace) -> void:
 			if resource_path.is_empty():
 				return
 			match action:
-				&"play_sfx":
+				AudioActionTypesScript.PLAY_SFX:
 					pass
-				&"play_music":
+				AudioActionTypesScript.PLAY_MUSIC:
 					pass

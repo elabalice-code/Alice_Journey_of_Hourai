@@ -2,6 +2,8 @@ extends RefCounted
 class_name RuntimeEventActionPlan
 
 const RuntimeEventActionIntentScript = preload("res://CoreEngine/Scripts/Signal/RuntimeEvent/RuntimeEventActionIntent.gd")
+const RuntimeEventActionPayloadScript = preload("res://CoreEngine/Scripts/Helper/RuntimeEvent/RuntimeEventActionPayload.gd")
+const RuntimeEventActionTypesScript = preload("res://CoreEngine/Scripts/Contract/RuntimeEventActionTypes.gd")
 
 static func build_action_intents(event_dict: Dictionary, source_event_id: String) -> Array[RuntimeEventActionIntent]:
 	var intents: Array[RuntimeEventActionIntent] = []
@@ -20,61 +22,52 @@ static func build_action_intent(action: Dictionary, source_event_id: String) -> 
 	var action_type := str(action.get("type", ""))
 	var delay_ms := int(action.get("delayMs", 0))
 	match action_type:
-		"StartEvent":
+		RuntimeEventActionTypesScript.START_EVENT:
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_START_EVENT, {
 				"target_event_id": str(action.get("targetEventId", "")).strip_edges()
 			}, delay_ms)
-		"ChangeMap":
-			var payload := parse_payload(action)
+		RuntimeEventActionTypesScript.CHANGE_MAP:
+			var payload := RuntimeEventActionPayloadScript.parse(action)
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_LOAD_ROOM, {
-				"target_map": str(payload.get("map", "")).strip_edges()
+				"target_map": RuntimeEventActionPayloadScript.get_string(payload, "map")
 			}, delay_ms)
-		"SetVariable":
-			var payload2 := parse_payload(action)
+		RuntimeEventActionTypesScript.SET_VARIABLE:
+			var payload2 := RuntimeEventActionPayloadScript.parse(action)
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_SET_VARIABLE, {
-				"key": StringName(str(payload2.get("key", "")).strip_edges()),
-				"value": payload2.get("value", null)
+				"key": RuntimeEventActionPayloadScript.get_string_name(payload2, "key"),
+				"value": RuntimeEventActionPayloadScript.get_value(payload2, "value")
 			}, delay_ms)
-		"EmitSignal":
-			var payload3 := parse_payload(action)
+		RuntimeEventActionTypesScript.EMIT_SIGNAL:
+			var payload3 := RuntimeEventActionPayloadScript.parse(action)
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_EMIT_SIGNAL, {
-				"signal": str(payload3.get("signal", "")).strip_edges(),
+				"signal": RuntimeEventActionPayloadScript.get_string(payload3, "signal"),
 				"source_domain": "Meta",
 				"from_event": source_event_id
 			}, delay_ms)
-		"StartDialogue":
-			var payload4 := parse_payload(action)
+		RuntimeEventActionTypesScript.START_DIALOGUE:
+			var payload4 := RuntimeEventActionPayloadScript.parse(action)
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_START_DIALOGUE, {
-				"dialogue_id": StringName(str(payload4.get("dialogueId", "")).strip_edges()),
-				"speaker": str(payload4.get("speaker", "")).strip_edges(),
-				"story_text": str(payload4.get("storyText", "")).strip_edges(),
-				"npc_text": str(payload4.get("npcText", "")).strip_edges(),
-				"room": str(payload4.get("room", "")),
+				"dialogue_id": RuntimeEventActionPayloadScript.get_string_name(payload4, "dialogueId"),
+				"speaker": RuntimeEventActionPayloadScript.get_string(payload4, "speaker"),
+				"story_text": RuntimeEventActionPayloadScript.get_string(payload4, "storyText"),
+				"npc_text": RuntimeEventActionPayloadScript.get_string(payload4, "npcText"),
+				"room": RuntimeEventActionPayloadScript.get_string(payload4, "room"),
 			}, delay_ms)
-		"StartCombat":
-			var payload5 := parse_payload(action)
+		RuntimeEventActionTypesScript.START_COMBAT:
+			var payload5 := RuntimeEventActionPayloadScript.parse(action)
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_LEVEL_EVENT, {
-				"event": StringName(str(payload5.get("combatId", "start_combat"))),
-				"room": str(payload5.get("room", ""))
+				"event": RuntimeEventActionPayloadScript.get_string_name(payload5, "combatId", "start_combat"),
+				"room": RuntimeEventActionPayloadScript.get_string(payload5, "room")
 			}, delay_ms)
-		"CompleteQuest":
-			var payload6 := parse_payload(action)
+		RuntimeEventActionTypesScript.COMPLETE_QUEST:
+			var payload6 := RuntimeEventActionPayloadScript.parse(action)
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_COMPLETE_QUEST, {
-				"quest_id": StringName(str(payload6.get("questId", payload6.get("quest_id", ""))).strip_edges())
+				"quest_id": RuntimeEventActionPayloadScript.get_quest_id(payload6)
 			}, delay_ms)
-		"CustomScript":
-			var payload7 := parse_payload(action)
+		RuntimeEventActionTypesScript.CUSTOM_SCRIPT:
+			var payload7 := RuntimeEventActionPayloadScript.parse(action)
 			return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_LEVEL_EVENT, {
-				"event": StringName(str(payload7.get("scriptEvent", "custom_script"))),
-				"room": str(payload7.get("room", ""))
+				"event": RuntimeEventActionPayloadScript.get_string_name(payload7, "scriptEvent", "custom_script"),
+				"room": RuntimeEventActionPayloadScript.get_string(payload7, "room")
 			}, delay_ms)
 	return RuntimeEventActionIntentScript.make(RuntimeEventActionIntentScript.KIND_NONE)
-
-static func parse_payload(action: Dictionary) -> Dictionary:
-	var raw := str(action.get("payloadJson", "")).strip_edges()
-	if raw.is_empty():
-		return {}
-	var parsed = JSON.parse_string(raw)
-	if parsed is Dictionary:
-		return parsed
-	return {}

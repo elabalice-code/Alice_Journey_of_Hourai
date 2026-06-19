@@ -8,14 +8,14 @@ const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd"
 @onready var _bar: TextureProgressBar = $HPBar
 @onready var _label: Label = $Label
 
-var _combatant: Node
+var _combatant: Combatant
 var _workbench: WorkbenchService
 var _target_path_str: String = ""
 
 func _ready() -> void:
 	position = Vector2(0.0, y_offset)
 	_apply_textures()
-	_combatant = get_node_or_null(combatant_path)
+	_combatant = get_node_or_null(combatant_path) as Combatant
 	_workbench = WorkbenchService.get_singleton()
 	if _workbench != null:
 		_target_path_str = str(get_parent().get_path())
@@ -37,7 +37,7 @@ func _apply_textures() -> void:
 		_bar.texture_progress = fill
 
 func _bind_legacy() -> void:
-	_combatant = get_node_or_null(combatant_path)
+	_combatant = get_node_or_null(combatant_path) as Combatant
 	if _combatant == null:
 		return
 	if _combatant.has_signal("health_changed"):
@@ -57,13 +57,11 @@ func _refresh_legacy() -> void:
 		visible = false
 		return
 	visible = true
-	var hp := float(_combatant.get("hp"))
-	var max_hp := float(_combatant.get("max_hp"))
+	var hp := _combatant.hp
+	var max_hp := _combatant.max_hp
 	_bar.max_value = max_hp
 	_bar.value = hp
-	var armor := 0.0
-	if _combatant.has_method("get_total_armor"):
-		armor = float(_combatant.get_total_armor())
+	var armor := _combatant.get_total_armor()
 	_label.text = "HP %d/%d  护甲 %d" % [int(round(hp)), int(round(max_hp)), int(round(armor))]
 
 func _exit_tree() -> void:

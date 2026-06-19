@@ -1,16 +1,18 @@
 extends Node
 class_name ItemCatalog
 
+const EquipmentSlotTypesScript = preload("res://CoreEngine/Scripts/Contract/EquipmentSlotTypes.gd")
+
 static var _defs_cache: Dictionary
 
 static func get_item_defs() -> Dictionary:
 	if not _defs_cache.is_empty():
 		return _defs_cache
 	_defs_cache = {
-		&"sword_1": ItemDef.make(&"sword_1", "武器1", &"weapon", &"weapon", "res://CoreEngine/Sprites/Items/Sword1.bmp"),
-		&"sword_2": ItemDef.make(&"sword_2", "武器2", &"weapon", &"weapon", "res://CoreEngine/Sprites/Items/Sword2.bmp"),
-		&"sword_3": ItemDef.make(&"sword_3", "武器3", &"weapon", &"weapon", "res://CoreEngine/Sprites/Items/Sword3.bmp"),
-		&"sword_4": ItemDef.make(&"sword_4", "武器4", &"weapon", &"weapon", "res://CoreEngine/Sprites/Items/Sword4.bmp"),
+		&"sword_1": ItemDef.make(&"sword_1", "武器1", EquipmentSlotTypesScript.WEAPON, EquipmentSlotTypesScript.WEAPON, "res://CoreEngine/Sprites/Items/Sword1.bmp"),
+		&"sword_2": ItemDef.make(&"sword_2", "武器2", EquipmentSlotTypesScript.WEAPON, EquipmentSlotTypesScript.WEAPON, "res://CoreEngine/Sprites/Items/Sword2.bmp"),
+		&"sword_3": ItemDef.make(&"sword_3", "武器3", EquipmentSlotTypesScript.WEAPON, EquipmentSlotTypesScript.WEAPON, "res://CoreEngine/Sprites/Items/Sword3.bmp"),
+		&"sword_4": ItemDef.make(&"sword_4", "武器4", EquipmentSlotTypesScript.WEAPON, EquipmentSlotTypesScript.WEAPON, "res://CoreEngine/Sprites/Items/Sword4.bmp"),
 		&"rune_1": ItemDef.make(&"rune_1", "符文1", &"rune", &"", "res://CoreEngine/Sprites/Items/Magic1.bmp"),
 		&"rune_2": ItemDef.make(&"rune_2", "符文2", &"rune", &"", "res://CoreEngine/Sprites/Items/Magic2.bmp"),
 		&"rune_3": ItemDef.make(&"rune_3", "符文3", &"rune", &"", "res://CoreEngine/Sprites/Items/Magic3.bmp"),

@@ -1,4 +1,7 @@
 extends Node
+class_name Combatant
+
+const EquipmentSlotTypesScript = preload("res://CoreEngine/Scripts/Contract/EquipmentSlotTypes.gd")
 
 signal health_changed(current_hp: float, max_hp: float)
 signal equipment_changed(total_armor: float)
@@ -10,6 +13,7 @@ signal died()
 
 var equipment: Dictionary = {}
 var blocking: bool = false
+var facing_dir: Vector2 = Vector2.RIGHT
 
 func _ready() -> void:
 	hp = clampf(hp, 0.0, max_hp)
@@ -17,7 +21,7 @@ func _ready() -> void:
 func get_total_armor() -> float:
 	var total := base_armor
 	for slot in equipment.keys():
-		if StringName(slot) == &"shield":
+		if StringName(slot) == EquipmentSlotTypesScript.SHIELD:
 			continue
 		var item: Variant = equipment.get(slot)
 		if item is Dictionary:
@@ -25,7 +29,7 @@ func get_total_armor() -> float:
 	return maxf(0.0, total)
 
 func get_block_armor() -> float:
-	var item: Variant = equipment.get(&"shield")
+	var item: Variant = equipment.get(EquipmentSlotTypesScript.SHIELD)
 	if item is Dictionary:
 		var d := item as Dictionary
 		if d.has("block_armor"):
@@ -33,8 +37,19 @@ func get_block_armor() -> float:
 		return float(d.get("armor", 0.0))
 	return 0.0
 
+func get_armor_against(attacker_dir: Vector2 = Vector2.ZERO) -> float:
+	var armor := get_total_armor()
+	if blocking and _is_front_attack(attacker_dir):
+		armor += get_block_armor()
+	return armor
+
 func set_blocking(value: bool) -> void:
 	blocking = value
+
+func set_facing_dir(value: Vector2) -> void:
+	if value.length_squared() <= 0.0001:
+		return
+	facing_dir = value.normalized()
 
 func equip(slot: StringName, item: Dictionary) -> void:
 	equipment[slot] = item
@@ -55,9 +70,7 @@ func apply_raw_damage(raw_damage: float) -> float:
 	return apply_hit(float(raw_damage), Vector2.ZERO)
 
 func apply_hit(raw_damage: float, attacker_dir: Vector2) -> float:
-	var armor := get_total_armor()
-	if blocking and _is_front_attack(attacker_dir):
-		armor += get_block_armor()
+	var armor := get_armor_against(attacker_dir)
 	var actual := float(raw_damage) * 100.0 / (100.0 + armor)
 	apply_damage_from_actor(actual)
 	return actual
@@ -79,10 +92,4 @@ func apply_damage_from_actor(amount: float) -> float:
 func _is_front_attack(attacker_dir: Vector2) -> bool:
 	if attacker_dir.length_squared() <= 0.0001:
 		return false
-	var facing := Vector2.RIGHT
-	var owner := get_parent()
-	if owner != null and owner.has_method("get_facing_dir"):
-		facing = owner.call("get_facing_dir") as Vector2
-	if facing.length_squared() <= 0.0001:
-		facing = Vector2.RIGHT
-	return attacker_dir.normalized().dot(facing.normalized()) > 0.1
+	return attacker_dir.normalized().dot(facing_dir) > 0.1

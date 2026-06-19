@@ -18,6 +18,7 @@ Current domains:
 - `QuestFlow/`: quest lifecycle routing and intent planning.
 - `InventoryFlow/`: inventory action routing with reserved composition/decomposition state-machine entry points.
 - `CombatFlow/`: combat request routing and damage/sync intent planning.
+- `DialogueFlow/`: story-first dialogue routing and active-dialogue handoff planning.
 
 Signal hygiene check:
 - Signal code should not call Workbench `send`, mutate workplace data, load resources, instantiate classes, or set scene/node properties.

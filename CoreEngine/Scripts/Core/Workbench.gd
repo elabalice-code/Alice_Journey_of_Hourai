@@ -1,10 +1,10 @@
 extends Node
 class_name WorkbenchService
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
 const LevelEventManagerActor = preload("res://CoreEngine/Scripts/Actor/LevelEventManagerActor.gd")
 const PlayerDataManagerActor = preload("res://CoreEngine/Scripts/Actor/PlayerDataManagerActor.gd")
 const ProgressData = preload("res://CoreEngine/Scripts/Data/ProgressData.gd")
+const WorkPlaceScript = preload("res://CoreEngine/Scripts/Data/WorkPlace.gd")
 const SaveActor = preload("res://CoreEngine/Scripts/Actor/SaveActor.gd")
 const RoomFlowActor = preload("res://CoreEngine/Scripts/Actor/RoomFlowActor.gd")
 const AreaFlowActor = preload("res://CoreEngine/Scripts/Actor/AreaFlowActor.gd")
@@ -22,19 +22,19 @@ signal message_published(message: Dictionary)
 signal tick(delta: float)
 signal workplace_published(workplace)
 
-var _queue_workplaces: Array[ActorFramework.WorkPlace] = []
+var _queue_workplaces: Array[WorkPlace] = []
 var _services: Dictionary = {}
 var _max_dispatch_per_frame: int = 4096
 var _routes: Dictionary = {}
-var _global_workplace: ActorFramework.WorkPlace
+var _global_workplace: WorkPlace
 
 static func get_singleton() -> WorkbenchService:
 	return (Engine.get_main_loop() as SceneTree).root.get_node_or_null(^"Workbench") as WorkbenchService
 
-func get_workplace() -> ActorFramework.WorkPlace:
+func get_workplace() -> WorkPlace:
 	if _global_workplace != null:
 		return _global_workplace
-	return get_service(&"workplace") as ActorFramework.WorkPlace
+	return get_service(&"workplace") as WorkPlace
 
 func register_workplace_data(key: StringName, value: Variant) -> void:
 	var wp := get_workplace()
@@ -50,7 +50,7 @@ func get_workplace_data(key: StringName, default_value: Variant = null) -> Varia
 
 func _ready() -> void:
 	if _global_workplace == null:
-		_global_workplace = ActorFramework.WorkPlace.new()
+		_global_workplace = WorkPlaceScript.new()
 		set_service(&"workplace", _global_workplace)
 	if not _global_workplace.has_data(&"progress"):
 		register_workplace_data(&"progress", ProgressData.new())
@@ -132,7 +132,7 @@ func get_services(name: StringName) -> Array:
 	return _prune_service_list(name)
 
 func send(message: Dictionary) -> void:
-	var wp := ActorFramework.WorkPlace.new()
+	var wp := WorkPlaceScript.new()
 	var raw_type = message.get("type", &"")
 	if raw_type is StringName:
 		wp.type = raw_type
@@ -143,9 +143,9 @@ func send(message: Dictionary) -> void:
 	wp.payload = message
 	_queue_workplaces.append(wp)
 
-func send_workplace(workplace: ActorFramework.WorkPlace) -> void:
+func send_workplace(workplace: WorkPlace) -> void:
 	if workplace == _global_workplace:
-		var wp := ActorFramework.WorkPlace.new()
+		var wp := WorkPlaceScript.new()
 		wp.type = workplace.type
 		wp.payload = workplace.payload
 		wp.meta = workplace.meta.duplicate(true)
@@ -177,7 +177,7 @@ func unregister_actor(actor: Object) -> void:
 		list = list.filter(func(e): return e.get("actor") != actor)
 		_routes[t] = list
 
-func _dispatch_workplace(workplace: ActorFramework.WorkPlace) -> void:
+func _dispatch_workplace(workplace: WorkPlace) -> void:
 	if workplace.payload is Dictionary and not workplace.payload.has("type"):
 		workplace.payload["type"] = workplace.type
 	if workplace.payload is Dictionary and not workplace.payload.is_empty():
@@ -205,7 +205,7 @@ func _physics_process(delta: float) -> void:
 	tick.emit(delta)
 	var dispatched := 0
 	while dispatched < _max_dispatch_per_frame and not _queue_workplaces.is_empty():
-		var workplace := _queue_workplaces.pop_front() as ActorFramework.WorkPlace
+		var workplace := _queue_workplaces.pop_front() as WorkPlace
 		_dispatch_workplace(workplace)
 		dispatched += 1
 	if dispatched >= _max_dispatch_per_frame and not _queue_workplaces.is_empty():

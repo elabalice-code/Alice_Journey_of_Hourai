@@ -1,6 +1,7 @@
 extends RefCounted
 class_name QuestLifecyclePlan
 
+const QuestActionTypesScript = preload("res://CoreEngine/Scripts/Contract/QuestActionTypes.gd")
 const QuestFlowIntentScript = preload("res://CoreEngine/Scripts/Signal/QuestFlow/QuestFlowIntent.gd")
 
 static func build_lifecycle_intent(msg: Dictionary, quest_data) -> QuestFlowIntent:
@@ -11,19 +12,19 @@ static func build_lifecycle_intent(msg: Dictionary, quest_data) -> QuestFlowInte
 	if quest_id == &"":
 		return QuestFlowIntentScript.make(QuestFlowIntentScript.KIND_NONE)
 	match action:
-		&"accept":
+		QuestActionTypesScript.ACCEPT:
 			if can_accept(quest_data, quest_id):
 				return QuestFlowIntentScript.make(QuestFlowIntentScript.KIND_ACCEPT_QUEST, {
 					"quest_id": quest_id,
 					"status": &"started"
 				})
-		&"advance":
+		QuestActionTypesScript.ADVANCE:
 			if can_advance(quest_data, quest_id):
 				return QuestFlowIntentScript.make(QuestFlowIntentScript.KIND_ADVANCE_QUEST, {
 					"quest_id": quest_id,
 					"status": &"advanced"
 				})
-		&"complete":
+		QuestActionTypesScript.COMPLETE:
 			if can_complete(quest_data, quest_id):
 				return QuestFlowIntentScript.make(QuestFlowIntentScript.KIND_COMPLETE_QUEST, {
 					"quest_id": quest_id,

@@ -1,13 +1,13 @@
 extends RefCounted
 class_name InventoryManagerActor
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 const ItemCatalog = preload("res://CoreEngine/Scripts/Items/ItemCatalog.gd")
-const PlayerInventory = preload("res://CoreEngine/Scripts/Items/PlayerInventory.gd")
 const InventoryFlowProducersScript = preload("res://CoreEngine/Scripts/Signal/InventoryFlow/InventoryFlowProducers.gd")
 const InventoryFlowRouterScript = preload("res://CoreEngine/Scripts/Signal/InventoryFlow/InventoryFlowRouter.gd")
 const InventorySlotsScript = preload("res://CoreEngine/Scripts/Helper/Inventory/InventorySlots.gd")
+const EquipmentShapeScript = preload("res://CoreEngine/Scripts/Helper/Inventory/EquipmentShape.gd")
+const CombatantPortScript = preload("res://CoreEngine/Scripts/Actor/CombatantPort.gd")
 
 var _workbench: WorkbenchService
 
@@ -27,10 +27,10 @@ func _on_workplace(workplace) -> void:
 	var global_wp := _workbench.get_workplace()
 	if global_wp == null:
 		return
-	var inv_data: ActorFramework.InventoryData = global_wp.inventory
+	var inv_data: InventoryData = global_wp.inventory
 	_ensure_inventory_shape(inv_data)
 	var frame: InventoryFlowSignalFrame = InventoryFlowProducersScript.from_workplace(workplace)
-	var intent: InventoryFlowIntent = InventoryFlowRouterScript.route(frame)
+	var intent: InventoryFlowIntent = InventoryFlowRouterScript.route(frame, inv_data)
 	_execute_intent(intent)
 
 func _execute_intent(intent: InventoryFlowIntent) -> void:
@@ -130,9 +130,7 @@ func equip_from_bag(index: int, slot: StringName) -> bool:
 	if not InventorySlotsScript.is_valid_index(data.bag, index):
 		return false
 	var item := data.bag[index]
-	if item == null:
-		return false
-	if item.equip_slot != slot:
+	if not EquipmentShapeScript.can_equip_to_slot(item, slot):
 		return false
 	var prev := data.equipped.get(slot) as ItemDef
 	data.equipped[slot] = item
@@ -161,7 +159,7 @@ func place_rune_from_bag(index: int, rune_slot_index: int) -> bool:
 	_ensure_inventory_shape(data)
 	if not InventorySlotsScript.is_valid_index(data.runes, rune_slot_index):
 		return false
-	if rune_slot_index < PlayerInventory.LOCKED_RUNE_SLOT_COUNT:
+	if rune_slot_index < InventoryData.LOCKED_RUNE_SLOT_COUNT:
 		return false
 	if not InventorySlotsScript.is_valid_index(data.bag, index):
 		return false
@@ -181,7 +179,7 @@ func remove_rune_to_bag(rune_slot_index: int) -> bool:
 	_ensure_inventory_shape(data)
 	if not InventorySlotsScript.is_valid_index(data.runes, rune_slot_index):
 		return false
-	if rune_slot_index < PlayerInventory.LOCKED_RUNE_SLOT_COUNT:
+	if rune_slot_index < InventoryData.LOCKED_RUNE_SLOT_COUNT:
 		return false
 	var item := data.runes[rune_slot_index]
 	if item == null:
@@ -209,7 +207,7 @@ func pickup(item_id: StringName, count: int = 1) -> void:
 			break
 	_notify_update()
 
-func _get_data() -> ActorFramework.InventoryData:
+func _get_data() -> InventoryData:
 	if _workbench == null:
 		return null
 	var global_wp := _workbench.get_workplace()
@@ -217,11 +215,10 @@ func _get_data() -> ActorFramework.InventoryData:
 		return null
 	return global_wp.inventory
 
-func _ensure_inventory_shape(data: ActorFramework.InventoryData) -> void:
-	InventorySlotsScript.ensure_items_size(data.bag, PlayerInventory.BAG_SIZE)
-	InventorySlotsScript.ensure_items_size(data.runes, PlayerInventory.RUNE_SIZE)
+func _ensure_inventory_shape(data: InventoryData) -> void:
+	data.ensure_shape()
 
-func _add_to_first_empty(data: ActorFramework.InventoryData, item: ItemDef) -> bool:
+func _add_to_first_empty(data: InventoryData, item: ItemDef) -> bool:
 	var index: int = InventorySlotsScript.first_empty_index(data.bag)
 	if index < 0:
 		return false
@@ -241,29 +238,10 @@ func _apply_equipment_to_player_combatant() -> void:
 	var player := _workbench.get_service(&"player") as Node
 	if not is_instance_valid(player):
 		return
-	var combatant := player.get_node_or_null(^"Combatant")
-	if not is_instance_valid(combatant):
+	var port: CombatantPort = CombatantPortScript.from_target(player)
+	if not port.is_valid():
 		return
 	var data := _get_data()
 	if data == null:
 		return
-	var slots: Array[StringName] = [ &"head", &"clothes", &"shoes", &"weapon" ]
-	for s in slots:
-		if combatant.has_method(&"unequip"):
-			combatant.call(&"unequip", s)
-	for s in slots:
-		var item := data.equipped.get(s) as ItemDef
-		if item == null:
-			continue
-		if combatant.has_method(&"equip"):
-			combatant.call(&"equip", s, _to_equipment_dict(item))
-
-func _to_equipment_dict(item: ItemDef) -> Dictionary:
-	var d := {
-		"id": item.id,
-		"name": item.display_name,
-		"kind": item.kind,
-	}
-	for k in item.stats.keys():
-		d[k] = item.stats[k]
-	return d
+	port.sync_equipment(data.equipped)

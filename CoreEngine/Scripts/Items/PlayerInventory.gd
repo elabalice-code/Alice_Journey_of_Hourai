@@ -4,12 +4,14 @@ class_name PlayerInventory
 signal changed()
 
 const ItemCatalog = preload("res://CoreEngine/Scripts/Items/ItemCatalog.gd")
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const InventoryActionTypesScript = preload("res://CoreEngine/Scripts/Contract/InventoryActionTypes.gd")
+const EquipmentShapeScript = preload("res://CoreEngine/Scripts/Helper/Inventory/EquipmentShape.gd")
+const CombatantPortScript = preload("res://CoreEngine/Scripts/Actor/CombatantPort.gd")
 
-const BAG_SIZE: int = 64
-const RUNE_SIZE: int = 6
-const LOCKED_RUNE_SLOT_COUNT: int = 3
+const BAG_SIZE: int = InventoryData.BAG_SIZE
+const RUNE_SIZE: int = InventoryData.RUNE_SIZE
+const LOCKED_RUNE_SLOT_COUNT: int = InventoryData.LOCKED_RUNE_SLOT_COUNT
 
 var bag: Array[ItemDef] = []
 var equipped: Dictionary = {}
@@ -47,7 +49,7 @@ func set_bag_item(index: int, item: ItemDef) -> void:
 	if _workbench != null:
 		_workbench.send({
 			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
-			"action": &"set_bag_item",
+			"action": InventoryActionTypesScript.SET_BAG_ITEM,
 			"index": index,
 			"item": item,
 		})
@@ -60,14 +62,12 @@ func equip_from_bag(index: int, slot: StringName) -> bool:
 	if index < 0 or index >= bag.size():
 		return false
 	var item := bag[index]
-	if item == null:
-		return false
-	if item.equip_slot != slot:
+	if not EquipmentShapeScript.can_equip_to_slot(item, slot):
 		return false
 	if _workbench != null:
 		_workbench.send({
 			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
-			"action": &"equip_from_bag",
+			"action": InventoryActionTypesScript.EQUIP_FROM_BAG,
 			"index": index,
 			"slot": slot,
 		})
@@ -84,7 +84,7 @@ func unequip_to_bag(slot: StringName) -> bool:
 	if _workbench != null:
 		_workbench.send({
 			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
-			"action": &"unequip_to_bag",
+			"action": InventoryActionTypesScript.UNEQUIP_TO_BAG,
 			"slot": slot,
 		})
 		return true
@@ -104,7 +104,7 @@ func place_rune_from_bag(index: int, rune_slot_index: int) -> bool:
 	if _workbench != null:
 		_workbench.send({
 			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
-			"action": &"place_rune_from_bag",
+			"action": InventoryActionTypesScript.PLACE_RUNE_FROM_BAG,
 			"index": index,
 			"rune_slot_index": rune_slot_index,
 		})
@@ -124,36 +124,18 @@ func remove_rune_to_bag(rune_slot_index: int) -> bool:
 	if _workbench != null:
 		_workbench.send({
 			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
-			"action": &"remove_rune_to_bag",
+			"action": InventoryActionTypesScript.REMOVE_RUNE_TO_BAG,
 			"rune_slot_index": rune_slot_index,
 		})
 		return true
 	return false
 
-func apply_equipment_to_combatant(combatant: Node) -> void:
-	if combatant == null:
-		return
+func apply_equipment_to_combatant(combatant: Combatant) -> void:
 	_sync_from_workplace()
-	var slots: Array[StringName] = [ &"head", &"clothes", &"shoes", &"weapon" ]
-	for s in slots:
-		if combatant.has_method("unequip"):
-			combatant.call("unequip", s)
-	for s in slots:
-		var item := equipped.get(s) as ItemDef
-		if item == null:
-			continue
-		if combatant.has_method("equip"):
-			combatant.call("equip", s, _to_equipment_dict(item))
-
-func _to_equipment_dict(item: ItemDef) -> Dictionary:
-	var d := {
-		"id": item.id,
-		"name": item.display_name,
-		"kind": item.kind,
-	}
-	for k in item.stats.keys():
-		d[k] = item.stats[k]
-	return d
+	var port := CombatantPortScript.new()
+	port.target = combatant.get_parent() if combatant != null else null
+	port.combatant = combatant
+	port.sync_equipment(equipped)
 
 func _on_message(message: Dictionary) -> void:
 	var t: StringName = message.get("type", &"")
@@ -168,13 +150,10 @@ func _sync_from_workplace() -> void:
 	var global_wp := _workbench.get_workplace()
 	if global_wp == null:
 		return
-	var data: ActorFramework.InventoryData = global_wp.inventory
+	var data: InventoryData = global_wp.inventory
 	if data == null:
 		return
-	if data.bag.size() != BAG_SIZE:
-		data.bag.resize(BAG_SIZE)
-	if data.runes.size() != RUNE_SIZE:
-		data.runes.resize(RUNE_SIZE)
+	data.ensure_shape()
 	bag = data.bag
 	equipped = data.equipped
 	runes = data.runes
@@ -185,32 +164,16 @@ func _bootstrap_workplace() -> void:
 	var global_wp := _workbench.get_workplace()
 	if global_wp == null:
 		return
-	var data: ActorFramework.InventoryData = global_wp.inventory
+	var data: InventoryData = global_wp.inventory
 	if data == null:
 		return
-	if data.bag.size() != BAG_SIZE:
-		data.bag.resize(BAG_SIZE)
-	if data.runes.size() != RUNE_SIZE:
-		data.runes.resize(RUNE_SIZE)
-	if _has_any_inventory(data):
+	data.ensure_shape()
+	if data.has_any_inventory():
 		return
 	if _has_any_local_inventory():
 		data.bag = bag
 		data.equipped = equipped
 		data.runes = runes
-
-func _has_any_inventory(data: ActorFramework.InventoryData) -> bool:
-	if data == null:
-		return false
-	if not data.equipped.is_empty():
-		return true
-	for it in data.bag:
-		if it != null:
-			return true
-	for r in data.runes:
-		if r != null:
-			return true
-	return false
 
 func _has_any_local_inventory() -> bool:
 	if not equipped.is_empty():

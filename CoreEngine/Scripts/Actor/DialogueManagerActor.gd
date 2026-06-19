@@ -1,6 +1,11 @@
 extends Node
+class_name DialogueManagerActor
 
 const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const DialogueActionTypesScript = preload("res://CoreEngine/Scripts/Contract/DialogueActionTypes.gd")
+const DialogueEventKeyScript = preload("res://CoreEngine/Scripts/Helper/Dialogue/DialogueEventKey.gd")
+const DialogueFlowIntentScript = preload("res://CoreEngine/Scripts/Signal/DialogueFlow/DialogueFlowIntent.gd")
+const DialogueChoicePlanScript = preload("res://CoreEngine/Scripts/Signal/DialogueFlow/Featuror/DialogueChoicePlan.gd")
 
 var _npc_ui
 var _story_ui
@@ -8,6 +13,11 @@ var _active_mode: StringName = &""
 var _active_npc_id: StringName = &""
 
 func _ready() -> void:
+	var workbench := WorkbenchService.get_singleton()
+	if workbench != null:
+		workbench.register_actor(self, [
+			MessageTypes.TYPE_DIALOGUE_ACTION_REQUEST
+		], &"_on_workplace")
 	if not InputMap.has_action("interact"):
 		InputMap.add_action("interact")
 		var ev = InputEventKey.new()
@@ -21,6 +31,31 @@ func _ready() -> void:
 	_npc_ui.hide_dialogue()
 	_npc_ui.hide_prompt()
 	_story_ui.hide_dialogue()
+
+func _exit_tree() -> void:
+	var workbench := WorkbenchService.get_singleton()
+	if workbench != null:
+		workbench.unregister_actor(self)
+
+func _on_workplace(workplace) -> void:
+	if workplace == null:
+		return
+	var msg: Dictionary = workplace.payload
+	var action: StringName = msg.get("action", &"")
+	match action:
+		DialogueActionTypesScript.SHOW_PROMPT:
+			show_prompt(str(msg.get("text", "")))
+		DialogueActionTypesScript.HIDE_PROMPT:
+			hide_prompt()
+		DialogueActionTypesScript.REQUEST_DIALOGUE:
+			request_dialogue(
+				msg.get("dialogue_id", &"") as StringName,
+				str(msg.get("speaker", "")),
+				str(msg.get("story_text", "")),
+				str(msg.get("npc_text", ""))
+			)
+		DialogueActionTypesScript.END_DIALOGUE:
+			end_dialogue()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _active_mode != &"story":
@@ -43,17 +78,21 @@ func hide_prompt() -> void:
 	_npc_ui.hide_prompt()
 
 func request_dialogue(npc_id: StringName, speaker_name: String, story_text: String, npc_text: String) -> void:
-	if _active_npc_id == npc_id and _active_mode == &"story":
-		_start_npc(npc_id, speaker_name, npc_text)
-		return
-	if _active_mode != &"":
-		end_dialogue()
-		return
-	if not _is_story_done(npc_id):
-		_mark_story_done(npc_id)
-		_start_story(npc_id, speaker_name, story_text)
-		return
-	_start_npc(npc_id, speaker_name, npc_text)
+	var intent: DialogueFlowIntent = DialogueChoicePlanScript.build_request_intent(
+		npc_id,
+		_active_npc_id,
+		_active_mode,
+		_is_story_done(npc_id)
+	)
+	match intent.kind:
+		DialogueFlowIntentScript.KIND_START_STORY:
+			if bool(intent.payload.get("mark_story_done", false)):
+				_mark_story_done(npc_id)
+			_start_story(npc_id, speaker_name, story_text)
+		DialogueFlowIntentScript.KIND_START_NPC:
+			_start_npc(npc_id, speaker_name, npc_text)
+		DialogueFlowIntentScript.KIND_END_ACTIVE:
+			end_dialogue()
 
 func end_dialogue() -> void:
 	var last_npc_id := _active_npc_id
@@ -93,28 +132,25 @@ func _start_npc(npc_id: StringName, speaker_name: String, text: String) -> void:
 	})
 
 func _story_event_key(npc_id: StringName) -> StringName:
-	return StringName("story_%s_done" % String(npc_id))
+	return DialogueEventKeyScript.story_done(npc_id)
 
 func _is_story_done(npc_id: StringName) -> bool:
 	var workbench := WorkbenchService.get_singleton()
 	if workbench == null:
 		return false
-	var progress = workbench.get_workplace_data(&"progress")
+	var progress := workbench.get_workplace_data(&"progress") as ProgressData
 	if progress == null:
 		return false
-	if progress.has_method("has_event"):
-		return bool(progress.call("has_event", _story_event_key(npc_id)))
-	return false
+	return progress.has_event(_story_event_key(npc_id))
 
 func _mark_story_done(npc_id: StringName) -> void:
 	var workbench := WorkbenchService.get_singleton()
 	if workbench == null:
 		return
-	var progress = workbench.get_workplace_data(&"progress")
+	var progress := workbench.get_workplace_data(&"progress") as ProgressData
 	if progress == null:
 		return
-	if progress.has_method("add_event"):
-		progress.call("add_event", _story_event_key(npc_id))
+	progress.add_event(_story_event_key(npc_id))
 
 func _emit_runtime_signal(signal_name: String, extra: Dictionary = {}) -> void:
 	var workbench := WorkbenchService.get_singleton()
