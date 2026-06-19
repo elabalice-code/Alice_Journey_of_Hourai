@@ -1,6 +1,6 @@
 # Overrides room transitions to create confusing maps. Takes effect when player is inside the area. It has to be placed in the middle of room transition.
 extends Area2D
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 ## Target room for the loop.
 @export_file("room_link") var loop_target
@@ -28,7 +28,7 @@ func _on_body_entered(body: Node2D) -> void:
 			if workbench == null:
 				return
 			workbench.send({
-				"type": ActorFramework.TYPE_SET_LOOP_TARGET,
+				"type": MessageTypes.TYPE_SET_LOOP_TARGET,
 				"loop_target": loop_target
 			})
 
@@ -42,7 +42,7 @@ func _on_body_exited(body: Node2D) -> void:
 		if game == null:
 			return
 		if loop_mode == 1 and not game.map_changing:
-			workbench.send({"type": ActorFramework.TYPE_CLEAR_LOOP_TARGET})
+			workbench.send({"type": MessageTypes.TYPE_CLEAR_LOOP_TARGET})
 
 func on_cell_changed():
 	if loop_active:
@@ -53,11 +53,11 @@ func on_cell_changed():
 			if workbench == null:
 				return
 			workbench.send({
-				"type": ActorFramework.TYPE_LOAD_ROOM_REQUEST,
+				"type": MessageTypes.TYPE_LOAD_ROOM_REQUEST,
 				"target_map": loop_target
 			})
 			workbench.send({
-				"type": ActorFramework.TYPE_SHIFT_PLAYER_REQUEST,
+				"type": MessageTypes.TYPE_SHIFT_PLAYER_REQUEST,
 				"delta": loop_shift
 			})
 
@@ -72,7 +72,7 @@ func on_room_changed():
 		if workbench == null:
 			return
 		workbench.send({
-			"type": ActorFramework.TYPE_SHIFT_PLAYER_REQUEST,
+			"type": MessageTypes.TYPE_SHIFT_PLAYER_REQUEST,
 			"delta": loop_shift
 		})
 		# Ugly workaround for physics bug that causes area to detect at wrong position.

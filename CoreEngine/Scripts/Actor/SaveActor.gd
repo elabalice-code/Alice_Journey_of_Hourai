@@ -1,7 +1,7 @@
 extends RefCounted
 class_name SaveActor
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 const ProgressData = preload("res://CoreEngine/Scripts/Data/ProgressData.gd")
 
 var _workbench: WorkbenchService
@@ -9,7 +9,7 @@ var _workbench: WorkbenchService
 func _init(p_workbench: WorkbenchService) -> void:
 	_workbench = p_workbench
 	if _workbench:
-		_workbench.register_actor(self, [ActorFramework.TYPE_SAVE_REQUEST], &"_on_workplace")
+		_workbench.register_actor(self, [MessageTypes.TYPE_SAVE_REQUEST], &"_on_workplace")
 
 func _on_workplace(workplace) -> void:
 	if workplace == null:
@@ -21,13 +21,13 @@ func _on_workplace(workplace) -> void:
 	var game: Game = _workbench.get_service(&"game") as Game
 	if game != null:
 		game.save_game()
-	_workbench.send({"type": ActorFramework.TYPE_RESET_MAP_STARTING_COORDS_REQUEST})
+	_workbench.send({"type": MessageTypes.TYPE_RESET_MAP_STARTING_COORDS_REQUEST})
 	
 	var progress := _workbench.get_workplace_data(&"progress") as ProgressData
 	if progress:
 		progress.mark_saved()
 	
 	_workbench.send({
-		"type": ActorFramework.TYPE_SAVE_COMPLETED,
+		"type": MessageTypes.TYPE_SAVE_COMPLETED,
 		"reason": reason
 	})

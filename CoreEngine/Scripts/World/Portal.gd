@@ -1,6 +1,6 @@
 # A portal object that transports to another world layer.
 extends Area2D
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 # The target map after entering the portal.
 @export_file("room_link") var target_map: String
 @export var target_area: StringName = &""
@@ -143,7 +143,7 @@ func _on_body_entered(body: Node2D) -> void:
 			current_map_path = str(game.map.scene_file_path)
 		print("Portal enter from_room=%s to_target=%s resolved=%s area_id=%s" % [str(MetSys.get_current_room_id()), str(target_map), str(resolved), str(target_area)])
 		workbench.send({
-			"type": ActorFramework.TYPE_RUNTIME_EVENT_SIGNAL,
+			"type": MessageTypes.TYPE_RUNTIME_EVENT_SIGNAL,
 			"signal": "Map.Exit",
 			"source_domain": "Map",
 			"portal_name": name,
@@ -164,19 +164,19 @@ func _on_body_entered(body: Node2D) -> void:
 			after["node"] = target_entry_node
 		if target_area != &"":
 			workbench.send({
-				"type": ActorFramework.TYPE_LOAD_AREA_REQUEST,
+				"type": MessageTypes.TYPE_LOAD_AREA_REQUEST,
 				"area_id": target_area,
 				"entry_room": target_map,
 				"after": after
 			})
 		else:
 			workbench.send({
-				"type": ActorFramework.TYPE_LOAD_ROOM_REQUEST,
+				"type": MessageTypes.TYPE_LOAD_ROOM_REQUEST,
 				"target_map": target_map,
 				"after": after
 			})
 		workbench.send({
-			"type": ActorFramework.TYPE_RESET_MAP_STARTING_COORDS_REQUEST
+			"type": MessageTypes.TYPE_RESET_MAP_STARTING_COORDS_REQUEST
 		})
 		# A trick to reset player's event variable when it's safe to do so (i.e. after some frames).
 		get_tree().create_timer(0.25).timeout.connect(body.set.bind(&"event", false))

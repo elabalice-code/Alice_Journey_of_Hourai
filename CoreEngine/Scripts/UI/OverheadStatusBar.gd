@@ -1,6 +1,6 @@
 extends Node2D
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 @export var combatant_path: NodePath = ^"../Combatant"
 @export var y_offset: float = -70.0
@@ -22,7 +22,7 @@ func _ready() -> void:
 		if not _workbench.message_published.is_connected(_on_message):
 			_workbench.message_published.connect(_on_message)
 		_workbench.send({
-			"type": ActorFramework.TYPE_COMBAT_SYNC_REQUEST,
+			"type": MessageTypes.TYPE_COMBAT_SYNC_REQUEST,
 			"target": get_parent(),
 		})
 		return
@@ -72,7 +72,7 @@ func _exit_tree() -> void:
 
 func _on_message(message: Dictionary) -> void:
 	var t: StringName = message.get("type", &"")
-	if t != ActorFramework.TYPE_COMBAT_STATE_CHANGED:
+	if t != MessageTypes.TYPE_COMBAT_STATE_CHANGED:
 		return
 	var tp := str(message.get("target_path", ""))
 	if tp.is_empty() or tp != _target_path_str:

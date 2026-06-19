@@ -2,6 +2,7 @@
 extends CharacterBody2D
 
 const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 const BulletScene = preload("res://CoreEngine/Objects/Bullet.tscn")
 const FireAngleRule = preload("res://CoreEngine/Scripts/Input/FireAngleRule.gd")
 
@@ -94,8 +95,8 @@ func _bind_workbench() -> void:
 	if _workbench == null:
 		return
 	_workbench.register_actor(self, [
-		ActorFramework.TYPE_PLAYER_DATA_CHANGED,
-		ActorFramework.TYPE_INPUT_MODE_CHANGED,
+		MessageTypes.TYPE_PLAYER_DATA_CHANGED,
+		MessageTypes.TYPE_INPUT_MODE_CHANGED,
 	], &"_on_workplace")
 	var global_wp = _workbench.get_workplace()
 	if global_wp:
@@ -109,13 +110,13 @@ func _on_workplace(workplace) -> void:
 	if workplace == null:
 		return
 	match workplace.type:
-		ActorFramework.TYPE_PLAYER_DATA_CHANGED:
+		MessageTypes.TYPE_PLAYER_DATA_CHANGED:
 			var message: Dictionary = workplace.payload
 			speed_min_current = float(message.get("speed_min", SPEED_MIN))
 			speed_max_current = float(message.get("speed_max", SPEED_MAX))
 			jump_velocity_current = float(message.get("jump_velocity", JUMP_VELOCITY))
 			speed = clampf(speed, speed_min_current, speed_max_current)
-		ActorFramework.TYPE_INPUT_MODE_CHANGED:
+		MessageTypes.TYPE_INPUT_MODE_CHANGED:
 			var message2: Dictionary = workplace.payload
 			var new_mode := message2.get("mode", &"") as StringName
 			if new_mode != &"":
@@ -241,7 +242,7 @@ func kill():
 	if workbench == null:
 		return
 	workbench.send({
-		"type": ActorFramework.TYPE_LOAD_ROOM_REQUEST,
+		"type": MessageTypes.TYPE_LOAD_ROOM_REQUEST,
 		"target_map": MetSys.get_current_room_id()
 	})
 
@@ -293,7 +294,7 @@ func _handle_player_died() -> void:
 		workbench = WorkbenchService.get_singleton()
 	if workbench != null:
 		workbench.send({
-			"type": ActorFramework.TYPE_BATTLE_RESULT_REQUEST,
+			"type": MessageTypes.TYPE_BATTLE_RESULT_REQUEST,
 			"text": "失败"
 		})
 	await get_tree().create_timer(0.6).timeout

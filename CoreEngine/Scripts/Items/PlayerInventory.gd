@@ -5,6 +5,7 @@ signal changed()
 
 const ItemCatalog = preload("res://CoreEngine/Scripts/Items/ItemCatalog.gd")
 const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 const BAG_SIZE: int = 64
 const RUNE_SIZE: int = 6
@@ -45,7 +46,7 @@ func set_bag_item(index: int, item: ItemDef) -> void:
 		return
 	if _workbench != null:
 		_workbench.send({
-			"type": ActorFramework.TYPE_ITEM_ACTION_REQUEST,
+			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
 			"action": &"set_bag_item",
 			"index": index,
 			"item": item,
@@ -65,7 +66,7 @@ func equip_from_bag(index: int, slot: StringName) -> bool:
 		return false
 	if _workbench != null:
 		_workbench.send({
-			"type": ActorFramework.TYPE_ITEM_ACTION_REQUEST,
+			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
 			"action": &"equip_from_bag",
 			"index": index,
 			"slot": slot,
@@ -82,7 +83,7 @@ func unequip_to_bag(slot: StringName) -> bool:
 		return false
 	if _workbench != null:
 		_workbench.send({
-			"type": ActorFramework.TYPE_ITEM_ACTION_REQUEST,
+			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
 			"action": &"unequip_to_bag",
 			"slot": slot,
 		})
@@ -102,7 +103,7 @@ func place_rune_from_bag(index: int, rune_slot_index: int) -> bool:
 		return false
 	if _workbench != null:
 		_workbench.send({
-			"type": ActorFramework.TYPE_ITEM_ACTION_REQUEST,
+			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
 			"action": &"place_rune_from_bag",
 			"index": index,
 			"rune_slot_index": rune_slot_index,
@@ -122,7 +123,7 @@ func remove_rune_to_bag(rune_slot_index: int) -> bool:
 		return false
 	if _workbench != null:
 		_workbench.send({
-			"type": ActorFramework.TYPE_ITEM_ACTION_REQUEST,
+			"type": MessageTypes.TYPE_ITEM_ACTION_REQUEST,
 			"action": &"remove_rune_to_bag",
 			"rune_slot_index": rune_slot_index,
 		})
@@ -156,7 +157,7 @@ func _to_equipment_dict(item: ItemDef) -> Dictionary:
 
 func _on_message(message: Dictionary) -> void:
 	var t: StringName = message.get("type", &"")
-	if t != ActorFramework.TYPE_INVENTORY_UPDATED:
+	if t != MessageTypes.TYPE_INVENTORY_UPDATED:
 		return
 	_sync_from_workplace()
 	changed.emit()

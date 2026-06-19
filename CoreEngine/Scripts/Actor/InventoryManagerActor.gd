@@ -2,8 +2,12 @@ extends RefCounted
 class_name InventoryManagerActor
 
 const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 const ItemCatalog = preload("res://CoreEngine/Scripts/Items/ItemCatalog.gd")
 const PlayerInventory = preload("res://CoreEngine/Scripts/Items/PlayerInventory.gd")
+const InventoryFlowProducersScript = preload("res://CoreEngine/Scripts/Signal/InventoryFlow/InventoryFlowProducers.gd")
+const InventoryFlowRouterScript = preload("res://CoreEngine/Scripts/Signal/InventoryFlow/InventoryFlowRouter.gd")
+const InventorySlotsScript = preload("res://CoreEngine/Scripts/Helper/Inventory/InventorySlots.gd")
 
 var _workbench: WorkbenchService
 
@@ -12,15 +16,12 @@ func _init(p_workbench: WorkbenchService) -> void:
 	if _workbench:
 		ensure_initialized()
 		_workbench.register_actor(self, [
-			ActorFramework.TYPE_ITEM_ACTION_REQUEST
+			MessageTypes.TYPE_ITEM_ACTION_REQUEST
 		], &"_on_workplace")
 
 func _on_workplace(workplace) -> void:
 	if workplace == null:
 		return
-	
-	var t: StringName = workplace.type
-	var msg: Dictionary = workplace.payload
 	if _workbench == null:
 		return
 	var global_wp := _workbench.get_workplace()
@@ -28,39 +29,49 @@ func _on_workplace(workplace) -> void:
 		return
 	var inv_data: ActorFramework.InventoryData = global_wp.inventory
 	_ensure_inventory_shape(inv_data)
-	
-	match t:
-		ActorFramework.TYPE_ITEM_ACTION_REQUEST:
-			var action: StringName = msg.get("action", &"")
-			match action:
-				&"pickup":
-					var item_id: StringName = msg.get("item_id", &"")
-					var count: int = int(msg.get("count", 1))
-					pickup(item_id, count)
-				&"set_bag_item":
-					var index: int = int(msg.get("index", -1))
-					var item: Variant = msg.get("item")
-					set_bag_item(index, item as ItemDef)
-				&"swap_bag":
-					var a_index: int = int(msg.get("a_index", -1))
-					var b_index: int = int(msg.get("b_index", -1))
-					swap_bag_items(a_index, b_index)
-				&"equip_from_bag":
-					var index: int = int(msg.get("index", -1))
-					var slot: StringName = msg.get("slot", &"")
-					equip_from_bag(index, slot)
-				&"unequip_to_bag":
-					var slot: StringName = msg.get("slot", &"")
-					unequip_to_bag(slot)
-				&"place_rune_from_bag":
-					var index: int = int(msg.get("index", -1))
-					var rune_slot_index: int = int(msg.get("rune_slot_index", -1))
-					place_rune_from_bag(index, rune_slot_index)
-				&"remove_rune_to_bag":
-					var rune_slot_index: int = int(msg.get("rune_slot_index", -1))
-					remove_rune_to_bag(rune_slot_index)
-				&"ensure_initialized":
-					ensure_initialized()
+	var frame: InventoryFlowSignalFrame = InventoryFlowProducersScript.from_workplace(workplace)
+	var intent: InventoryFlowIntent = InventoryFlowRouterScript.route(frame)
+	_execute_intent(intent)
+
+func _execute_intent(intent: InventoryFlowIntent) -> void:
+	if intent == null or not intent.is_valid():
+		return
+	match intent.kind:
+		InventoryFlowIntent.KIND_PICKUP:
+			pickup(
+				intent.payload.get("item_id", &"") as StringName,
+				int(intent.payload.get("count", 1))
+			)
+		InventoryFlowIntent.KIND_SET_BAG_ITEM:
+			set_bag_item(
+				int(intent.payload.get("index", -1)),
+				intent.payload.get("item") as ItemDef
+			)
+		InventoryFlowIntent.KIND_SWAP_BAG:
+			swap_bag_items(
+				int(intent.payload.get("a_index", -1)),
+				int(intent.payload.get("b_index", -1))
+			)
+		InventoryFlowIntent.KIND_EQUIP_FROM_BAG:
+			equip_from_bag(
+				int(intent.payload.get("index", -1)),
+				intent.payload.get("slot", &"") as StringName
+			)
+		InventoryFlowIntent.KIND_UNEQUIP_TO_BAG:
+			unequip_to_bag(intent.payload.get("slot", &"") as StringName)
+		InventoryFlowIntent.KIND_PLACE_RUNE_FROM_BAG:
+			place_rune_from_bag(
+				int(intent.payload.get("index", -1)),
+				int(intent.payload.get("rune_slot_index", -1))
+			)
+		InventoryFlowIntent.KIND_REMOVE_RUNE_TO_BAG:
+			remove_rune_to_bag(int(intent.payload.get("rune_slot_index", -1)))
+		InventoryFlowIntent.KIND_ENSURE_INITIALIZED:
+			ensure_initialized()
+		InventoryFlowIntent.KIND_COMPOSE:
+			pass
+		InventoryFlowIntent.KIND_DECOMPOSE:
+			pass
 
 func ensure_initialized() -> void:
 	var data := _get_data()
@@ -79,7 +90,7 @@ func get_bag_item(index: int) -> ItemDef:
 	if data == null:
 		return null
 	_ensure_inventory_shape(data)
-	if index < 0 or index >= data.bag.size():
+	if not InventorySlotsScript.is_valid_index(data.bag, index):
 		return null
 	return data.bag[index]
 
@@ -88,7 +99,7 @@ func set_bag_item(index: int, item: ItemDef) -> void:
 	if data == null:
 		return
 	_ensure_inventory_shape(data)
-	if index < 0 or index >= data.bag.size():
+	if not InventorySlotsScript.is_valid_index(data.bag, index):
 		return
 	data.bag[index] = item
 	_notify_update()
@@ -98,9 +109,9 @@ func swap_bag_items(a_index: int, b_index: int) -> bool:
 	if data == null:
 		return false
 	_ensure_inventory_shape(data)
-	if a_index < 0 or a_index >= data.bag.size():
+	if not InventorySlotsScript.is_valid_index(data.bag, a_index):
 		return false
-	if b_index < 0 or b_index >= data.bag.size():
+	if not InventorySlotsScript.is_valid_index(data.bag, b_index):
 		return false
 	if a_index == b_index:
 		return true
@@ -116,7 +127,7 @@ func equip_from_bag(index: int, slot: StringName) -> bool:
 	if data == null:
 		return false
 	_ensure_inventory_shape(data)
-	if index < 0 or index >= data.bag.size():
+	if not InventorySlotsScript.is_valid_index(data.bag, index):
 		return false
 	var item := data.bag[index]
 	if item == null:
@@ -148,11 +159,11 @@ func place_rune_from_bag(index: int, rune_slot_index: int) -> bool:
 	if data == null:
 		return false
 	_ensure_inventory_shape(data)
-	if rune_slot_index < 0 or rune_slot_index >= data.runes.size():
+	if not InventorySlotsScript.is_valid_index(data.runes, rune_slot_index):
 		return false
 	if rune_slot_index < PlayerInventory.LOCKED_RUNE_SLOT_COUNT:
 		return false
-	if index < 0 or index >= data.bag.size():
+	if not InventorySlotsScript.is_valid_index(data.bag, index):
 		return false
 	var item := data.bag[index]
 	if item == null or item.kind != &"rune":
@@ -168,7 +179,7 @@ func remove_rune_to_bag(rune_slot_index: int) -> bool:
 	if data == null:
 		return false
 	_ensure_inventory_shape(data)
-	if rune_slot_index < 0 or rune_slot_index >= data.runes.size():
+	if not InventorySlotsScript.is_valid_index(data.runes, rune_slot_index):
 		return false
 	if rune_slot_index < PlayerInventory.LOCKED_RUNE_SLOT_COUNT:
 		return false
@@ -207,23 +218,21 @@ func _get_data() -> ActorFramework.InventoryData:
 	return global_wp.inventory
 
 func _ensure_inventory_shape(data: ActorFramework.InventoryData) -> void:
-	if data.bag.is_empty():
-		data.bag.resize(PlayerInventory.BAG_SIZE)
-	if data.runes.is_empty():
-		data.runes.resize(PlayerInventory.RUNE_SIZE)
+	InventorySlotsScript.ensure_items_size(data.bag, PlayerInventory.BAG_SIZE)
+	InventorySlotsScript.ensure_items_size(data.runes, PlayerInventory.RUNE_SIZE)
 
 func _add_to_first_empty(data: ActorFramework.InventoryData, item: ItemDef) -> bool:
-	for i in range(data.bag.size()):
-		if data.bag[i] == null:
-			data.bag[i] = item
-			return true
-	return false
+	var index: int = InventorySlotsScript.first_empty_index(data.bag)
+	if index < 0:
+		return false
+	data.bag[index] = item
+	return true
 
 func _notify_update() -> void:
 	if _workbench:
 		_apply_equipment_to_player_combatant()
 		_workbench.send({
-			"type": ActorFramework.TYPE_INVENTORY_UPDATED
+			"type": MessageTypes.TYPE_INVENTORY_UPDATED
 		})
 
 func _apply_equipment_to_player_combatant() -> void:

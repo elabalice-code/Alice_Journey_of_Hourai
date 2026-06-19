@@ -1,6 +1,6 @@
 extends Area2D
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 @export var speed: float = 380.0
 @export var lifetime_seconds: float = 4.0
@@ -70,7 +70,7 @@ func _try_apply_damage(target: Node) -> float:
 	if workbench != null:
 		if _can_receive_damage(target):
 			workbench.send({
-				"type": ActorFramework.TYPE_APPLY_DAMAGE_REQUEST,
+				"type": MessageTypes.TYPE_APPLY_DAMAGE_REQUEST,
 				"target": target,
 				"amount": damage,
 				"attacker_dir": attacker_dir,

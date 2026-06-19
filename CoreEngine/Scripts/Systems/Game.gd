@@ -2,7 +2,7 @@
 extends "res://addons/MetroidvaniaSystem/Template/Scripts/MetSysGame.gd"
 class_name Game
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 const SaveManager = preload("res://addons/MetroidvaniaSystem/Template/Scripts/SaveManager.gd")
 const AliceNPCScene = preload("res://CoreEngine/Objects/AliceNPC.tscn")
 const DialogueManagerActor = preload("res://CoreEngine/Scripts/Actor/DialogueManagerActor.gd")
@@ -105,7 +105,7 @@ func _ready() -> void:
 		workbench.set_service(&"game", self)
 		if is_instance_valid(player):
 			workbench.set_service(&"player", player)
-		workbench.register_actor(self, [ActorFramework.TYPE_BATTLE_RESULT_REQUEST], &"_on_workplace")
+		workbench.register_actor(self, [MessageTypes.TYPE_BATTLE_RESULT_REQUEST], &"_on_workplace")
 	
 	add_module("res://CoreEngine/Scripts/Systems/AreaRoomTransitions.gd")
 	add_module("res://CoreEngine/Scripts/Core/ExtensionBootstrap.gd")
@@ -426,7 +426,7 @@ func _continue_game() -> void:
 	var workbench := WorkbenchService.get_singleton()
 	if workbench != null:
 		workbench.send({
-			"type": ActorFramework.TYPE_RUNTIME_EVENT_SIGNAL,
+			"type": MessageTypes.TYPE_RUNTIME_EVENT_SIGNAL,
 			"signal": "Game.Continue",
 			"source_domain": "System"
 		})
@@ -678,10 +678,10 @@ func _start_new_game() -> void:
 	_set_loading_visible(false)
 	if workbench != null:
 		workbench.send({
-			"type": ActorFramework.TYPE_RUNTIME_EVENT_START
+			"type": MessageTypes.TYPE_RUNTIME_EVENT_START
 		})
 		workbench.send({
-			"type": ActorFramework.TYPE_RUNTIME_EVENT_SIGNAL,
+			"type": MessageTypes.TYPE_RUNTIME_EVENT_SIGNAL,
 			"signal": "Game.StartNew",
 			"source_domain": "System"
 		})
@@ -752,7 +752,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			var workbench := WorkbenchService.get_singleton()
 			if workbench != null:
 				workbench.send({
-					"type": ActorFramework.TYPE_LOAD_AREA_REQUEST,
+					"type": MessageTypes.TYPE_LOAD_AREA_REQUEST,
 					"area_id": area_id
 				})
 			get_viewport().set_input_as_handled()
@@ -848,7 +848,7 @@ func _apply_area(area_id: StringName, also_set_starting_room: bool) -> void:
 		AreaDef.InputMode.TOP_DOWN_SHOOTER:
 			mode_name = &"top_down_shooter"
 	workbench.send({
-		"type": ActorFramework.TYPE_INPUT_MODE_CHANGE_REQUEST,
+		"type": MessageTypes.TYPE_INPUT_MODE_CHANGE_REQUEST,
 		"mode": mode_name
 	})
 	if also_set_starting_room and not def.starting_room.is_empty():
@@ -916,7 +916,7 @@ func init_room():
 	if wb != null:
 		wb.set_service(&"player", player)
 		wb.send({
-			"type": ActorFramework.TYPE_ROOM_LOADED,
+			"type": MessageTypes.TYPE_ROOM_LOADED,
 			"room_id": StringName(str(MetSys.get_current_room_id())),
 			"room_path": str(map.scene_file_path)
 		})
@@ -926,7 +926,7 @@ func init_room():
 		var workbench := WorkbenchService.get_singleton()
 		if workbench != null:
 			workbench.send({
-				"type": ActorFramework.TYPE_LEVEL_EVENT_REQUEST,
+				"type": MessageTypes.TYPE_LEVEL_EVENT_REQUEST,
 				"event": &"enter_random_level" if is_random else &"exit_random_level",
 				"room": str(map.scene_file_path)
 			})
@@ -1338,7 +1338,7 @@ func _on_workplace(workplace) -> void:
 	var t: StringName = workplace.type
 	var msg: Dictionary = workplace.payload
 	match t:
-		ActorFramework.TYPE_BATTLE_RESULT_REQUEST:
+		MessageTypes.TYPE_BATTLE_RESULT_REQUEST:
 			_show_battle_result(str(msg.get("text", "")))
 
 func _ensure_alice() -> void:

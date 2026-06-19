@@ -1,6 +1,6 @@
 extends Control
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 @onready var _player_bar: TextureProgressBar = $PlayerBar
 @onready var _enemy_bar: TextureProgressBar = $EnemyBar
@@ -118,13 +118,13 @@ func _request_sync(target: Node) -> void:
 	if _workbench == null or target == null or not is_instance_valid(target):
 		return
 	_workbench.send({
-		"type": ActorFramework.TYPE_COMBAT_SYNC_REQUEST,
+		"type": MessageTypes.TYPE_COMBAT_SYNC_REQUEST,
 		"target": target,
 	})
 
 func _on_message(message: Dictionary) -> void:
 	var t: StringName = message.get("type", &"")
-	if t != ActorFramework.TYPE_COMBAT_STATE_CHANGED:
+	if t != MessageTypes.TYPE_COMBAT_STATE_CHANGED:
 		return
 	var tp := str(message.get("target_path", ""))
 	if tp.is_empty():

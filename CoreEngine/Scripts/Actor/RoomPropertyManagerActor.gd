@@ -1,62 +1,44 @@
 extends RefCounted
 class_name RoomPropertyManagerActor
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
-const RoomPropertyCatalog = preload("res://CoreEngine/Scripts/World/RoomPropertyCatalog.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const MapPropertyProducersScript = preload("res://CoreEngine/Scripts/Signal/MapPropertyFlow/MapPropertyProducers.gd")
+const MapPropertyRouterScript = preload("res://CoreEngine/Scripts/Signal/MapPropertyFlow/MapPropertyRouter.gd")
 
 var _workbench: WorkbenchService
 
 func _init(p_workbench: WorkbenchService) -> void:
 	_workbench = p_workbench
 	if _workbench != null:
-		_workbench.register_actor(self, [ActorFramework.TYPE_ROOM_LOADED], &"_on_workplace")
+		_workbench.register_actor(self, [MessageTypes.TYPE_ROOM_LOADED], &"_on_workplace")
 
 func _on_workplace(workplace) -> void:
 	if workplace == null:
-		return
-	var msg: Dictionary = workplace.payload
-	var room_path := str(msg.get("room_path", ""))
-	if room_path.is_empty():
 		return
 	
 	var game := _workbench.get_service(&"game") as Game
 	if game == null or game.map == null:
 		return
 	
-	_apply_room_properties(game.map, room_path)
+	var frame: MapPropertySignalFrame = MapPropertyProducersScript.from_workplace(workplace)
+	var intents: Array[MapPropertyIntent] = MapPropertyRouterScript.route(frame)
+	for intent in intents:
+		_execute_intent(game.map, intent)
 
-func _apply_room_properties(map_root: Node, room_path: String) -> void:
-	var key := _normalize_room_key(room_path)
-	var all := RoomPropertyCatalog.get_room_properties()
-	var entry := all.get(key, {}) as Dictionary
-	if entry.is_empty():
+func _execute_intent(map_root: Node, intent: MapPropertyIntent) -> void:
+	if intent == null or not intent.is_valid():
 		return
-	
-	var ops: Array = entry.get("ops", []) as Array
-	for raw in ops:
-		if raw is Dictionary:
-			_apply_op(map_root, raw as Dictionary)
-
-func _normalize_room_key(room_path: String) -> String:
-	if room_path.begins_with("uid://"):
-		var resolved := ResourceUID.uid_to_path(room_path)
-		if not resolved.is_empty():
-			return resolved
-	return room_path
-
-func _apply_op(map_root: Node, op: Dictionary) -> void:
-	var name := StringName(str(op.get("op", "")))
-	match name:
-		&"set_props":
-			_op_set_props(map_root, op)
-		&"set_resources":
-			_op_set_resources(map_root, op)
-		&"set_shape":
-			_op_set_shape(map_root, op)
-		&"replace_source_id":
-			_op_replace_source_id(map_root, op)
-		&"replace_tile":
-			_op_replace_tile(map_root, op)
+	match intent.kind:
+		MapPropertyIntent.KIND_SET_PROPS:
+			_op_set_props(map_root, intent.payload)
+		MapPropertyIntent.KIND_SET_RESOURCES:
+			_op_set_resources(map_root, intent.payload)
+		MapPropertyIntent.KIND_SET_SHAPE:
+			_op_set_shape(map_root, intent.payload)
+		MapPropertyIntent.KIND_REPLACE_SOURCE_ID:
+			_op_replace_source_id(map_root, intent.payload)
+		MapPropertyIntent.KIND_REPLACE_TILE:
+			_op_replace_tile(map_root, intent.payload)
 
 func _get_target_node(map_root: Node, op: Dictionary) -> Node:
 	var node_path := str(op.get("path", ""))

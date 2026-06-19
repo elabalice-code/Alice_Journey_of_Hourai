@@ -1,6 +1,6 @@
 extends Node
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 var _npc_ui
 var _story_ui
@@ -121,7 +121,7 @@ func _emit_runtime_signal(signal_name: String, extra: Dictionary = {}) -> void:
 	if workbench == null:
 		return
 	var payload := {
-		"type": ActorFramework.TYPE_RUNTIME_EVENT_SIGNAL,
+		"type": MessageTypes.TYPE_RUNTIME_EVENT_SIGNAL,
 		"signal": signal_name,
 		"source_domain": "Dialogue",
 	}

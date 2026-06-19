@@ -1,14 +1,9 @@
 extends RefCounted
 class_name AreaFlowActor
 
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
-const AreaCatalog = preload("res://CoreEngine/Scripts/World/AreaCatalog.gd")
-const AreaDef = preload("res://CoreEngine/Scripts/World/AreaDef.gd")
-
-const KEY_CURRENT_AREA_ID: StringName = &"current_area_id"
-const KEY_TRANSITION_STYLE: StringName = &"current_transition_style"
-const KEY_MAP_TYPE: StringName = &"current_map_type"
-const KEY_INPUT_MODE: StringName = &"current_input_mode"
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const AreaFlowProducersScript = preload("res://CoreEngine/Scripts/Signal/MapFlow/AreaFlowProducers.gd")
+const AreaFlowRouterScript = preload("res://CoreEngine/Scripts/Signal/MapFlow/AreaFlowRouter.gd")
 
 var _workbench: WorkbenchService
 var _pending_area_loaded: Dictionary = {}
@@ -17,72 +12,56 @@ func _init(p_workbench: WorkbenchService) -> void:
 	_workbench = p_workbench
 	if _workbench:
 		_workbench.register_actor(self, [
-			ActorFramework.TYPE_LOAD_AREA_REQUEST,
-			ActorFramework.TYPE_ROOM_LOADED,
+			MessageTypes.TYPE_LOAD_AREA_REQUEST,
+			MessageTypes.TYPE_ROOM_LOADED,
 		], &"_on_workplace")
 
 func _on_workplace(workplace) -> void:
 	if workplace == null:
 		return
 	var t: StringName = workplace.type
-	var msg: Dictionary = workplace.payload
 	match t:
-		ActorFramework.TYPE_LOAD_AREA_REQUEST:
-			_apply_load_area_request(msg)
-		ActorFramework.TYPE_ROOM_LOADED:
-			_apply_room_loaded()
+		MessageTypes.TYPE_LOAD_AREA_REQUEST:
+			var frame: AreaFlowSignalFrame = AreaFlowProducersScript.from_workplace(workplace)
+			_execute_intents(AreaFlowRouterScript.route(frame))
+		MessageTypes.TYPE_ROOM_LOADED:
+			var intents: Array[AreaFlowIntent] = AreaFlowRouterScript.route_area_loaded(_pending_area_loaded)
+			_pending_area_loaded = {}
+			_execute_intents(intents)
 
-func _apply_load_area_request(msg: Dictionary) -> void:
-	var area_id := msg.get("area_id", &"") as StringName
-	if area_id == &"":
-		return
-	var def := AreaCatalog.get_area_def(area_id) as AreaDef
-	if def == null:
-		return
-	var entry_room := str(msg.get("entry_room", ""))
-	if entry_room.is_empty():
-		entry_room = def.starting_room
-	if entry_room.is_empty():
-		return
-	_pending_area_loaded = {
-		"area_id": area_id,
-		"entry_room": entry_room,
-	}
-	_workbench.register_workplace_data(KEY_CURRENT_AREA_ID, area_id)
-	_workbench.register_workplace_data(KEY_TRANSITION_STYLE, def.transition_style)
-	_workbench.register_workplace_data(KEY_MAP_TYPE, def.map_type)
-	_workbench.register_workplace_data(KEY_INPUT_MODE, def.input_mode)
-	_workbench.send({
-		"type": ActorFramework.TYPE_INPUT_MODE_CHANGE_REQUEST,
-		"mode": _to_input_mode_name(def.input_mode)
-	})
-	var room_req := {
-		"type": ActorFramework.TYPE_LOAD_ROOM_REQUEST,
-		"target_map": entry_room
-	}
-	if msg.get("after", null) is Dictionary:
-		room_req["after"] = msg.get("after", {}) as Dictionary
-	_workbench.send(room_req)
-	_workbench.send({
-		"type": ActorFramework.TYPE_RESET_MAP_STARTING_COORDS_REQUEST
-	})
+func _execute_intents(intents: Array[AreaFlowIntent]) -> void:
+	for intent in intents:
+		_execute_intent(intent)
 
-func _apply_room_loaded() -> void:
-	if _pending_area_loaded.is_empty():
+func _execute_intent(intent: AreaFlowIntent) -> void:
+	if intent == null or not intent.is_valid():
 		return
-	var payload := _pending_area_loaded
-	_pending_area_loaded = {}
-	_workbench.send({
-		"type": ActorFramework.TYPE_AREA_LOADED,
-		"area_id": payload.get("area_id", &""),
-		"entry_room": payload.get("entry_room", ""),
-	})
-
-func _to_input_mode_name(input_mode: int) -> StringName:
-	match input_mode:
-		AreaDef.InputMode.TOP_DOWN:
-			return &"top_down"
-		AreaDef.InputMode.TOP_DOWN_SHOOTER:
-			return &"top_down_shooter"
-		_:
-			return &"side_scrolling"
+	match intent.kind:
+		AreaFlowIntent.KIND_PREPARE_AREA_LOADED:
+			_pending_area_loaded = intent.payload.duplicate(true)
+		AreaFlowIntent.KIND_SET_AREA_STATE:
+			for key in intent.payload.keys():
+				_workbench.register_workplace_data(StringName(key), intent.payload[key])
+		AreaFlowIntent.KIND_REQUEST_INPUT_MODE:
+			_workbench.send({
+				"type": MessageTypes.TYPE_INPUT_MODE_CHANGE_REQUEST,
+				"mode": intent.payload.get("mode", &"side_scrolling")
+			})
+		AreaFlowIntent.KIND_LOAD_ENTRY_ROOM:
+			var room_req := {
+				"type": MessageTypes.TYPE_LOAD_ROOM_REQUEST,
+				"target_map": str(intent.payload.get("target_map", ""))
+			}
+			if intent.payload.get("after", null) is Dictionary:
+				room_req["after"] = intent.payload.get("after", {}) as Dictionary
+			_workbench.send(room_req)
+		AreaFlowIntent.KIND_RESET_MAP_STARTING_COORDS:
+			_workbench.send({
+				"type": MessageTypes.TYPE_RESET_MAP_STARTING_COORDS_REQUEST
+			})
+		AreaFlowIntent.KIND_EMIT_AREA_LOADED:
+			_workbench.send({
+				"type": MessageTypes.TYPE_AREA_LOADED,
+				"area_id": intent.payload.get("area_id", &""),
+				"entry_room": intent.payload.get("entry_room", ""),
+			})

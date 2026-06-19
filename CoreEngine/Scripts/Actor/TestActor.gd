@@ -2,6 +2,7 @@ extends RefCounted
 class_name TestActor
 
 const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 const KEY_AGENT_DEBUG_ENABLED: StringName = &"agent_debug_enabled"
 const KEY_AGENT_DEBUG_DIR: StringName = &"agent_debug_dir"
@@ -27,16 +28,16 @@ func _init(p_workbench: WorkbenchService) -> void:
 		return
 	_apply_boot_settings()
 	_workbench.register_actor(self, [
-		ActorFramework.TYPE_ROOM_LOADED,
-		ActorFramework.TYPE_AREA_LOADED,
-		ActorFramework.TYPE_LEVEL_EVENT,
-		ActorFramework.TYPE_RUNTIME_EVENT_SIGNAL,
-		ActorFramework.TYPE_RUNTIME_EVENT_ACTION,
-		ActorFramework.TYPE_PLAYER_DATA_CHANGED,
-		ActorFramework.TYPE_INVENTORY_UPDATED,
-		ActorFramework.TYPE_QUEST_UPDATED,
-		ActorFramework.TYPE_COMBAT_STATE_CHANGED,
-		ActorFramework.TYPE_SAVE_COMPLETED,
+		MessageTypes.TYPE_ROOM_LOADED,
+		MessageTypes.TYPE_AREA_LOADED,
+		MessageTypes.TYPE_LEVEL_EVENT,
+		MessageTypes.TYPE_RUNTIME_EVENT_SIGNAL,
+		MessageTypes.TYPE_RUNTIME_EVENT_ACTION,
+		MessageTypes.TYPE_PLAYER_DATA_CHANGED,
+		MessageTypes.TYPE_INVENTORY_UPDATED,
+		MessageTypes.TYPE_QUEST_UPDATED,
+		MessageTypes.TYPE_COMBAT_STATE_CHANGED,
+		MessageTypes.TYPE_SAVE_COMPLETED,
 	], &"_on_workplace")
 	if not _workbench.tick.is_connected(_on_tick):
 		_workbench.tick.connect(_on_tick)
@@ -55,31 +56,31 @@ func _on_workplace(workplace) -> void:
 	var t: StringName = workplace.type
 	var msg: Dictionary = workplace.payload
 	match t:
-		ActorFramework.TYPE_ROOM_LOADED:
+		MessageTypes.TYPE_ROOM_LOADED:
 			_log("room_loaded room_id=%s room_path=%s" % [str(msg.get("room_id", "")), str(msg.get("room_path", ""))])
 			_write_snapshot("room_loaded")
-		ActorFramework.TYPE_AREA_LOADED:
+		MessageTypes.TYPE_AREA_LOADED:
 			_log("area_loaded area_id=%s entry_room=%s" % [str(msg.get("area_id", "")), str(msg.get("entry_room", ""))])
 			_write_snapshot("area_loaded")
-		ActorFramework.TYPE_LEVEL_EVENT:
+		MessageTypes.TYPE_LEVEL_EVENT:
 			_log("level_event event=%s room=%s" % [str(msg.get("event", "")), str(msg.get("room", ""))])
-		ActorFramework.TYPE_RUNTIME_EVENT_SIGNAL:
+		MessageTypes.TYPE_RUNTIME_EVENT_SIGNAL:
 			_log("runtime_event_signal signal=%s source=%s" % [str(msg.get("signal", "")), str(msg.get("source_domain", ""))])
-		ActorFramework.TYPE_RUNTIME_EVENT_ACTION:
+		MessageTypes.TYPE_RUNTIME_EVENT_ACTION:
 			_log("runtime_event_action event_id=%s" % [str(msg.get("event_id", ""))])
-		ActorFramework.TYPE_PLAYER_DATA_CHANGED:
+		MessageTypes.TYPE_PLAYER_DATA_CHANGED:
 			_log("player_data_changed speed=[%s,%s] jump=%s" % [
 				str(msg.get("speed_min", "")),
 				str(msg.get("speed_max", "")),
 				str(msg.get("jump_velocity", ""))
 			])
-		ActorFramework.TYPE_INVENTORY_UPDATED:
+		MessageTypes.TYPE_INVENTORY_UPDATED:
 			_log("inventory_updated bag=%s equipped=%s" % [str(msg.get("bag_size", "")), str(msg.get("equipped_count", ""))])
-		ActorFramework.TYPE_QUEST_UPDATED:
+		MessageTypes.TYPE_QUEST_UPDATED:
 			_log("quest_updated quest_id=%s status=%s" % [str(msg.get("quest_id", "")), str(msg.get("status", ""))])
-		ActorFramework.TYPE_COMBAT_STATE_CHANGED:
+		MessageTypes.TYPE_COMBAT_STATE_CHANGED:
 			_log("combat_state_changed hp=%s max_hp=%s" % [str(msg.get("hp", "")), str(msg.get("max_hp", ""))])
-		ActorFramework.TYPE_SAVE_COMPLETED:
+		MessageTypes.TYPE_SAVE_COMPLETED:
 			_log("save_completed reason=%s" % [str(msg.get("reason", ""))])
 
 func _on_tick(delta: float) -> void:
@@ -181,14 +182,14 @@ func _execute_command(command: Dictionary) -> Dictionary:
 			if target_map.is_empty():
 				return _fail_command(action, "target_map is empty")
 			_workbench.send({
-				"type": ActorFramework.TYPE_LOAD_ROOM_REQUEST,
+				"type": MessageTypes.TYPE_LOAD_ROOM_REQUEST,
 				"target_map": target_map
 			})
 			return _ok_command(action, "load_room queued")
 		"start_runtime_event":
 			var event_id: String = str(command.get("event_id", "")).strip_edges()
 			_workbench.send({
-				"type": ActorFramework.TYPE_RUNTIME_EVENT_START,
+				"type": MessageTypes.TYPE_RUNTIME_EVENT_START,
 				"event_id": event_id
 			})
 			return _ok_command(action, "runtime event queued")
@@ -197,7 +198,7 @@ func _execute_command(command: Dictionary) -> Dictionary:
 			if signal_name.is_empty():
 				return _fail_command(action, "signal is empty")
 			_workbench.send({
-				"type": ActorFramework.TYPE_RUNTIME_EVENT_SIGNAL,
+				"type": MessageTypes.TYPE_RUNTIME_EVENT_SIGNAL,
 				"signal": signal_name,
 				"source_domain": str(command.get("source_domain", "Agent")),
 				"context": command.get("context", {})
@@ -254,7 +255,7 @@ func _command_teleport_player(action: String, command: Dictionary) -> Dictionary
 	var target: Vector2 = Vector2(float(command.get("x", player.position.x)), float(command.get("y", player.position.y)))
 	var delta: Vector2 = target - player.position
 	_workbench.send({
-		"type": ActorFramework.TYPE_SHIFT_PLAYER_REQUEST,
+		"type": MessageTypes.TYPE_SHIFT_PLAYER_REQUEST,
 		"delta": delta
 	})
 	if _has_property(player, &"velocity"):
@@ -276,7 +277,7 @@ func _command_move_player_to_node(action: String, command: Dictionary) -> Dictio
 		return _fail_command(action, "target node not found")
 	var delta: Vector2 = target.global_position - game.player.global_position
 	_workbench.send({
-		"type": ActorFramework.TYPE_SHIFT_PLAYER_REQUEST,
+		"type": MessageTypes.TYPE_SHIFT_PLAYER_REQUEST,
 		"delta": delta
 	})
 	if _has_property(game.player, &"velocity"):

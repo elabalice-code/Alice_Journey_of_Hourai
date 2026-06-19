@@ -1,6 +1,6 @@
 # A save point object. Colliding with it saves the game.
 extends Area2D
-const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
 
 @onready var start_time := Time.get_ticks_msec()
 
@@ -17,7 +17,7 @@ func on_body_entered(body: Node2D) -> void:
 		return
 	
 	workbench.send({
-		"type": ActorFramework.TYPE_SAVE_REQUEST,
+		"type": MessageTypes.TYPE_SAVE_REQUEST,
 		"reason": &"save_point",
 		"body": body
 	})

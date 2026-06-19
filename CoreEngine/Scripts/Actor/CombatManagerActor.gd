@@ -2,6 +2,10 @@ extends RefCounted
 class_name CombatManagerActor
 
 const ActorFramework = preload("res://CoreEngine/Scripts/Actor/ActorFramework.gd")
+const MessageTypes = preload("res://CoreEngine/Scripts/Contract/MessageTypes.gd")
+const CombatFlowProducersScript = preload("res://CoreEngine/Scripts/Signal/CombatFlow/CombatFlowProducers.gd")
+const CombatFlowRouterScript = preload("res://CoreEngine/Scripts/Signal/CombatFlow/CombatFlowRouter.gd")
+const DamageFormulaScript = preload("res://CoreEngine/Scripts/Helper/Combat/DamageFormula.gd")
 
 var _workbench: WorkbenchService
 var _last_state_by_target_path: Dictionary = {}
@@ -10,8 +14,8 @@ func _init(p_workbench: WorkbenchService) -> void:
 	_workbench = p_workbench
 	if _workbench:
 		_workbench.register_actor(self, [
-			ActorFramework.TYPE_APPLY_DAMAGE_REQUEST,
-			ActorFramework.TYPE_COMBAT_SYNC_REQUEST,
+			MessageTypes.TYPE_APPLY_DAMAGE_REQUEST,
+			MessageTypes.TYPE_COMBAT_SYNC_REQUEST,
 		], &"_on_workplace")
 		if not _workbench.tick.is_connected(_on_tick):
 			_workbench.tick.connect(_on_tick)
@@ -20,19 +24,22 @@ func _init(p_workbench: WorkbenchService) -> void:
 func _on_workplace(workplace) -> void:
 	if workplace == null:
 		return
-	
-	var t: StringName = workplace.type
-	var msg: Dictionary = workplace.payload
-	
-	match t:
-		ActorFramework.TYPE_APPLY_DAMAGE_REQUEST:
-			var amount: float = float(msg.get("amount", 0.0))
-			var target: Node = msg.get("target") as Node
-			var attacker_dir: Vector2 = msg.get("attacker_dir", Vector2.ZERO) as Vector2
-			apply_damage(target, amount, attacker_dir)
-		ActorFramework.TYPE_COMBAT_SYNC_REQUEST:
-			var target: Node = msg.get("target") as Node
-			request_sync(target)
+	var frame: CombatFlowSignalFrame = CombatFlowProducersScript.from_workplace(workplace)
+	var intent: CombatFlowIntent = CombatFlowRouterScript.route(frame)
+	_execute_intent(intent)
+
+func _execute_intent(intent: CombatFlowIntent) -> void:
+	if intent == null or not intent.is_valid():
+		return
+	match intent.kind:
+		CombatFlowIntent.KIND_APPLY_DAMAGE:
+			apply_damage(
+				intent.payload.get("target") as Node,
+				float(intent.payload.get("amount", 0.0)),
+				intent.payload.get("attacker_dir", Vector2.ZERO) as Vector2
+			)
+		CombatFlowIntent.KIND_SYNC:
+			request_sync(intent.payload.get("target") as Node)
 
 func _on_tick(_delta: float) -> void:
 	_sync_player_combat_to_workplace()
@@ -47,7 +54,7 @@ func apply_damage(target: Node, amount: float, attacker_dir: Vector2 = Vector2.Z
 	if _workbench != null:
 		var remaining := _get_target_hp(target)
 		_workbench.send({
-			"type": ActorFramework.TYPE_DAMAGE_APPLIED,
+			"type": MessageTypes.TYPE_DAMAGE_APPLIED,
 			"amount": dealt,
 			"remaining_hp": remaining,
 			"target": target,
@@ -55,7 +62,7 @@ func apply_damage(target: Node, amount: float, attacker_dir: Vector2 = Vector2.Z
 		_emit_combat_state(target, true)
 		if remaining <= 0.0:
 			_workbench.send({
-				"type": ActorFramework.TYPE_BATTLE_RESULT_REQUEST,
+				"type": MessageTypes.TYPE_BATTLE_RESULT_REQUEST,
 				"text": "DEFEAT"
 			})
 	return dealt
@@ -73,7 +80,7 @@ func _apply_damage_to_target_combatant(target: Node, amount: float, attacker_dir
 			if c.has_method(&"_is_front_attack") and bool(c.call(&"_is_front_attack", attacker_dir)):
 				if c.has_method(&"get_block_armor"):
 					armor += float(c.call(&"get_block_armor"))
-		var actual := raw * 100.0 / (100.0 + armor)
+		var actual := DamageFormulaScript.after_armor(raw, armor)
 		if c.has_method(&"apply_damage_from_actor"):
 			return float(c.call(&"apply_damage_from_actor", actual))
 		if c.has_method(&"apply_hit"):
@@ -144,7 +151,7 @@ func _emit_combat_state(target: Node, force: bool) -> void:
 		return
 	_last_state_by_target_path[key] = snapshot
 	_workbench.send({
-		"type": ActorFramework.TYPE_COMBAT_STATE_CHANGED,
+		"type": MessageTypes.TYPE_COMBAT_STATE_CHANGED,
 		"target_path": key,
 		"hp": hp,
 		"max_hp": max_hp,
