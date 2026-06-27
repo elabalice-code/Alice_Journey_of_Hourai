@@ -556,6 +556,13 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("Deleted link")
                     && text.Contains("ProjectDirty"),
                 "MapEditorTool ViewModel owns pure project link add/remove state updates.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-list-and-grid-tooltips", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("ToolTip")
+                    && text.Contains("MapsListMouseMove")
+                    && text.Contains("LinksListMouseMove")
+                    && text.Contains("PropertyGridSelectedGridItemChanged")
+                    && text.Contains("ShowPropertyGridToolTip"),
+                "MapEditorTool UI shows map/link list hover details and property grid selected-item help.");
             AddTextCheck(checks, godotRoot, "mapeditortool-project-file-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ProjectFile/ProjectFileExecutor.cs",
                 text => text.Contains("LoadProject") && text.Contains("SaveProject"),
                 "MapEditorTool project file executor can load and save MapProject JSON.");

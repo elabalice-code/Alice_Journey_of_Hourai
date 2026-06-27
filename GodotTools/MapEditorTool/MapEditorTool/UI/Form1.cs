@@ -50,8 +50,11 @@ namespace MapEditorTool.UI
         private readonly MapEditorShellViewModel _viewModel;
         private readonly MapPreviewCanvas _mapPreviewCanvas;
         private readonly LinksPreviewCanvas _linksPreviewCanvas;
+        private readonly ToolTip _toolTip;
         private MapEditorTool.Executor.MapCreation.CollisionLayoutData _currentCollisionOverlay;
         private CollisionLayoutTarget _currentCollisionOverlayTarget;
+        private int _lastMapToolTipIndex;
+        private int _lastLinkToolTipIndex;
         private bool _showCollisionOverlay;
         private bool _isDeveloperCommentBoxOpen;
         private bool _isApplyingSnapshot;
@@ -64,6 +67,15 @@ namespace MapEditorTool.UI
             _undoManager = new UndoManager();
             _mapPreviewCanvas = new MapPreviewCanvas();
             _linksPreviewCanvas = new LinksPreviewCanvas();
+            _toolTip = new ToolTip
+            {
+                AutoPopDelay = 12000,
+                InitialDelay = 350,
+                ReshowDelay = 100,
+                ShowAlways = true
+            };
+            _lastMapToolTipIndex = -1;
+            _lastLinkToolTipIndex = -1;
 
             _developerCommentExecutor = new DeveloperCommentExecutor(AppDomain.CurrentDomain.BaseDirectory);
             _collisionLayoutExecutor = new CollisionLayoutExecutor();
@@ -121,6 +133,8 @@ namespace MapEditorTool.UI
             RegisterPortalEditorProviders();
 
             mapPropertyGrid.PropertyValueChanged += MapPropertyGridPropertyValueChanged;
+            mapPropertyGrid.SelectedGridItemChanged += PropertyGridSelectedGridItemChanged;
+            linkPropertyGrid.SelectedGridItemChanged += PropertyGridSelectedGridItemChanged;
         }
 
         private void RegisterPortalEditorProviders()
@@ -306,7 +320,9 @@ namespace MapEditorTool.UI
 
             linksList.ContextMenuStrip = linkListContextMenu;
             mapsList.SelectedIndexChanged += MapsListSelectedIndexChanged;
+            mapsList.MouseMove += MapsListMouseMove;
             linksList.SelectedIndexChanged += LinksListSelectedIndexChanged;
+            linksList.MouseMove += LinksListMouseMove;
         }
 
         private void BuildTabs()
@@ -2745,6 +2761,31 @@ namespace MapEditorTool.UI
             ApplySnapshotToUi();
         }
 
+        private void MapsListMouseMove(object sender, MouseEventArgs e)
+        {
+            var index = mapsList.IndexFromPoint(e.Location);
+            if (index < 0 || index >= mapsList.Items.Count)
+            {
+                _lastMapToolTipIndex = -1;
+                return;
+            }
+
+            if (index == _lastMapToolTipIndex)
+                return;
+
+            _lastMapToolTipIndex = index;
+            var map = _viewModel.CurrentProject == null || _viewModel.CurrentProject.Maps == null || index >= _viewModel.CurrentProject.Maps.Count
+                ? null
+                : _viewModel.CurrentProject.Maps[index];
+            if (map == null)
+                return;
+
+            var text = string.IsNullOrWhiteSpace(map.ScenePath)
+                ? map.DisplayName
+                : map.DisplayName + Environment.NewLine + map.ScenePath;
+            _toolTip.SetToolTip(mapsList, text);
+        }
+
         private void LinksListSelectedIndexChanged(object sender, EventArgs e)
         {
             if (_isApplyingSnapshot)
@@ -2752,6 +2793,57 @@ namespace MapEditorTool.UI
 
             _viewModel.SelectLinkByIndex(linksList.SelectedIndex);
             ApplySnapshotToUi();
+        }
+
+        private void LinksListMouseMove(object sender, MouseEventArgs e)
+        {
+            var index = linksList.IndexFromPoint(e.Location);
+            if (index < 0 || index >= linksList.Items.Count)
+            {
+                _lastLinkToolTipIndex = -1;
+                return;
+            }
+
+            if (index == _lastLinkToolTipIndex)
+                return;
+
+            _lastLinkToolTipIndex = index;
+            var link = _viewModel.CurrentProject == null || _viewModel.CurrentProject.Links == null || index >= _viewModel.CurrentProject.Links.Count
+                ? null
+                : _viewModel.CurrentProject.Links[index];
+            if (link != null)
+                _toolTip.SetToolTip(linksList, link.DisplayName);
+        }
+
+        private void PropertyGridSelectedGridItemChanged(object sender, SelectedGridItemChangedEventArgs e)
+        {
+            var grid = sender as PropertyGrid;
+            if (grid == null)
+                return;
+
+            ShowPropertyGridToolTip(grid);
+        }
+
+        private void ShowPropertyGridToolTip(PropertyGrid grid)
+        {
+            if (grid == null || grid.SelectedGridItem == null)
+                return;
+
+            var descriptor = grid.SelectedGridItem.PropertyDescriptor;
+            var description = descriptor == null ? string.Empty : (descriptor.Description ?? string.Empty).Trim();
+            var value = grid.SelectedGridItem.Value == null ? string.Empty : grid.SelectedGridItem.Value.ToString();
+            if (string.IsNullOrWhiteSpace(description) && string.IsNullOrWhiteSpace(value))
+                return;
+
+            var text = string.IsNullOrWhiteSpace(description)
+                ? value
+                : string.IsNullOrWhiteSpace(value)
+                    ? description
+                    : description + Environment.NewLine + value;
+            var point = grid.PointToClient(Cursor.Position);
+            _toolTip.Show(text, grid, point.X + 18, point.Y + 18, 5000);
+            if (!string.IsNullOrWhiteSpace(value))
+                _toolTip.SetToolTip(grid, value);
         }
 
         private void MapPropertyGridPropertyValueChanged(object sender, PropertyValueChangedEventArgs e)
