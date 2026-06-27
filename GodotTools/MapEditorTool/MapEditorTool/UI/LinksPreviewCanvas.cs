@@ -313,11 +313,31 @@ namespace MapEditorTool.UI
             var to = edge.To == null ? string.Empty : edge.To.Label;
             var fromPortal = edge.Link.From == null ? string.Empty : (edge.Link.From.PortalId ?? string.Empty).Trim();
             var toPortal = edge.Link.To == null ? string.Empty : (edge.Link.To.PortalId ?? string.Empty).Trim();
+            var fromPortalLabel = ResolvePortalLabel(edge.From == null ? string.Empty : edge.From.MapId, fromPortal);
+            var toPortalLabel = ResolvePortalLabel(edge.To == null ? string.Empty : edge.To.MapId, toPortal);
             var portalLine = fromPortal.Length == 0 && toPortal.Length == 0
                 ? string.Empty
-                : Environment.NewLine + "Portal: " + fromPortal + " -> " + toPortal;
+                : Environment.NewLine + "Portal: " + fromPortalLabel + " -> " + toPortalLabel;
 
             return from + " -> " + to + portalLine;
+        }
+
+        private string ResolvePortalLabel(string mapId, string portalId)
+        {
+            portalId = (portalId ?? string.Empty).Trim();
+            if (portalId.Length == 0)
+                return string.Empty;
+
+            var map = FindMap(mapId);
+            if (map == null || map.Portals == null)
+                return portalId;
+
+            var portal = map.Portals.FirstOrDefault(item =>
+                string.Equals((item.Id ?? string.Empty).Trim(), portalId, StringComparison.Ordinal) ||
+                string.Equals((item.NodePath ?? string.Empty).Trim(), portalId, StringComparison.Ordinal));
+
+            var label = FormatPortalLabel(portal);
+            return label.Length == 0 ? portalId : label;
         }
 
         private void RaiseHoverHint(string text, Point location)

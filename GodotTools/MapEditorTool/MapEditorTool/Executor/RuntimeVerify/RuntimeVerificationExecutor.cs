@@ -352,9 +352,11 @@ namespace MapEditorTool.Executor.RuntimeVerify
                 text => text.Contains("HoverHintRequested")
                     && text.Contains("BuildNodeHoverText")
                     && text.Contains("BuildEdgeHoverText")
+                    && text.Contains("ResolvePortalLabel")
+                    && text.Contains("FormatPortalLabel")
                     && text.Contains("HitTestNode")
                     && text.Contains("HitTestEdge"),
-                "MapEditorTool links preview publishes hover hints for graph nodes and edges.");
+                "MapEditorTool links preview publishes hover hints for graph nodes and edges, resolving portal ids to readable portal labels.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-portal-drag", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("PortalMoveCommitted")
                     && text.Contains("PortalAddRequested")
