@@ -289,8 +289,15 @@ namespace MapEditorTool.Executor.RuntimeVerify
             AddTextCheck(checks, godotRoot, "mapeditortool-builds-foreground-texture-collision", "GodotTools/MapEditorTool/MapEditorTool/Executor/ForegroundTextureCollision/ForegroundTextureCollisionExecutor.cs",
                 text => text.Contains("BuildAndWriteLayout")
                     && text.Contains("ValidateForegroundTextureHasAlpha")
-                    && text.Contains("CollisionLayoutTarget.ForegroundTexture"),
-                "MapEditorTool can generate foreground texture collision layouts from alpha textures.");
+                    && text.Contains("CollisionLayoutTarget.ForegroundTexture")
+                    && text.Contains("TraceAlpha"),
+                "MapEditorTool can generate foreground texture collision layouts from alpha textures and trace alpha polygons for CLI diagnostics.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-cli-tracealpha", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
+                text => text.Contains("case \"tracealpha\"")
+                    && text.Contains("RunTraceAlpha")
+                    && text.Contains("ForegroundTextureCollisionExecutor")
+                    && text.Contains("FormatTraceAlphaSummary"),
+                "MapEditorTool restores the tracealpha CLI diagnostic through ForegroundTextureCollisionExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-loads-saves-collision-layout-json", "GodotTools/MapEditorTool/MapEditorTool/Executor/CollisionLayout/CollisionLayoutExecutor.cs",
                 text => text.Contains("LoadLayout")
                     && text.Contains("SaveLayout")

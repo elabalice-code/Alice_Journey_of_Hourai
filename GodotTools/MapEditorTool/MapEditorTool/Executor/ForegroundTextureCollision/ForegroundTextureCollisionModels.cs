@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using MapEditorTool.Executor.MapCreation;
 
 namespace MapEditorTool.Executor.ForegroundTextureCollision
@@ -23,6 +24,30 @@ namespace MapEditorTool.Executor.ForegroundTextureCollision
         public bool WroteCollisionFile { get; set; }
         public int SolidTileCount { get; set; }
         public int PolygonCount { get; set; }
+        public string Summary { get; set; }
+    }
+
+    public sealed class ForegroundTextureAlphaTraceReport
+    {
+        public ForegroundTextureAlphaTraceReport()
+        {
+            ImageFilePath = string.Empty;
+            Polygons = new List<List<GodotVector2Data>>();
+            SamplePoints = new List<GodotVector2Data>();
+            Summary = string.Empty;
+        }
+
+        public string ImageFilePath { get; set; }
+        public int ImageWidth { get; set; }
+        public int ImageHeight { get; set; }
+        public int WorldWidth { get; set; }
+        public int WorldHeight { get; set; }
+        public int AlphaThreshold { get; set; }
+        public bool HasAlphaChannel { get; set; }
+        public int PolygonCount { get; set; }
+        public int FirstPolygonPointCount { get; set; }
+        public List<List<GodotVector2Data>> Polygons { get; set; }
+        public List<GodotVector2Data> SamplePoints { get; set; }
         public string Summary { get; set; }
     }
 }

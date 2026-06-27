@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
@@ -96,6 +97,44 @@ namespace MapEditorTool.Executor.ForegroundTextureCollision
             catch
             {
                 return false;
+            }
+        }
+
+        public ForegroundTextureAlphaTraceReport TraceAlpha(string imageFilePath, int worldWidth, int worldHeight, int alphaThreshold)
+        {
+            imageFilePath = (imageFilePath ?? string.Empty).Trim();
+            if (imageFilePath.Length == 0)
+                throw new FileNotFoundException("Input image path is empty.", imageFilePath);
+
+            imageFilePath = Path.GetFullPath(imageFilePath);
+            if (!File.Exists(imageFilePath))
+                throw new FileNotFoundException("Input image not found.", imageFilePath);
+
+            using (var bitmap = new Bitmap(imageFilePath))
+            {
+                worldWidth = worldWidth <= 0 ? bitmap.Width : worldWidth;
+                worldHeight = worldHeight <= 0 ? bitmap.Height : worldHeight;
+                alphaThreshold = Math.Max(0, Math.Min(254, alphaThreshold));
+
+                var polygons = ForegroundTextureCollisionHelper.TraceAlphaPolygons(bitmap, worldWidth, worldHeight, alphaThreshold);
+                var firstPolygon = polygons.FirstOrDefault() ?? new List<GodotVector2Data>();
+                var samplePoints = firstPolygon.Take(5).ToList();
+
+                return new ForegroundTextureAlphaTraceReport
+                {
+                    ImageFilePath = imageFilePath,
+                    ImageWidth = bitmap.Width,
+                    ImageHeight = bitmap.Height,
+                    WorldWidth = worldWidth,
+                    WorldHeight = worldHeight,
+                    AlphaThreshold = alphaThreshold,
+                    HasAlphaChannel = ForegroundTextureCollisionHelper.BitmapHasAlphaChannel(bitmap),
+                    PolygonCount = polygons.Count,
+                    FirstPolygonPointCount = firstPolygon.Count,
+                    Polygons = polygons,
+                    SamplePoints = samplePoints,
+                    Summary = "polygons=" + polygons.Count + "; poly0_points=" + firstPolygon.Count
+                };
             }
         }
 

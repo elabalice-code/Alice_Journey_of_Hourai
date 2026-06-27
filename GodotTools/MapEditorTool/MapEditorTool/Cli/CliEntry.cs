@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
+using MapEditorTool.Executor.ForegroundTextureCollision;
 using MapEditorTool.Executor.MapImport;
 using MapEditorTool.Executor.MapReport;
 using MapEditorTool.Executor.ProjectFile;
@@ -39,6 +40,8 @@ namespace MapEditorTool.Cli
                         return RunValidate(opts);
                     case "patchpos":
                         return RunPatchPosition(opts);
+                    case "tracealpha":
+                        return RunTraceAlpha(opts);
                     case "agent-self-test":
                     case "--agent-self-test":
                         return RunAgentSelfTest(opts);
@@ -66,6 +69,7 @@ namespace MapEditorTool.Cli
             Console.WriteLine("  MapEditorTool.exe import --godotRoot <dir> --out <file> [--summary]");
             Console.WriteLine("  MapEditorTool.exe validate --godotRoot <dir> --in <file> [--summary]");
             Console.WriteLine("  MapEditorTool.exe patchpos --godotRoot <dir> --scene <res://...> --nodePath <path> --x <num> --y <num>");
+            Console.WriteLine("  MapEditorTool.exe tracealpha --in <image> [--worldW <num>] [--worldH <num>] [--threshold <0-254>] [--summary]");
             Console.WriteLine("  MapEditorTool.exe agent-self-test [--godotRoot <dir>]");
             return 0;
         }
@@ -188,6 +192,33 @@ namespace MapEditorTool.Cli
             return 0;
         }
 
+        private static int RunTraceAlpha(Dictionary<string, string> opts)
+        {
+            var input = RequireOption(opts, "in");
+            var worldWidth = ParseOptionalInt(GetOption(opts, "worldW"), 0, "worldW");
+            var worldHeight = ParseOptionalInt(GetOption(opts, "worldH"), 0, "worldH");
+            var threshold = ParseOptionalInt(GetOption(opts, "threshold"), 254, "threshold");
+            var report = new ForegroundTextureCollisionExecutor().TraceAlpha(input, worldWidth, worldHeight, threshold);
+
+            if (opts.ContainsKey("summary"))
+                Console.WriteLine(FormatTraceAlphaSummary(report));
+            else
+            {
+                Console.WriteLine("polygons=" + report.PolygonCount);
+                if (report.PolygonCount > 0)
+                {
+                    Console.WriteLine("poly0_points=" + report.FirstPolygonPointCount);
+                    for (var i = 0; i < report.SamplePoints.Count; i++)
+                    {
+                        var point = report.SamplePoints[i];
+                        Console.WriteLine("p" + i + "=" + FormatFloat(point.X) + "," + FormatFloat(point.Y));
+                    }
+                }
+            }
+
+            return 0;
+        }
+
         private static string FormatImportSummary(string godotRoot, string output, MapProject project)
         {
             var lines = new List<string>
@@ -213,6 +244,26 @@ namespace MapEditorTool.Cli
                 lines.Add("  none");
             foreach (var scene in sampleScenes)
                 lines.Add("  " + scene);
+
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
+        private static string FormatTraceAlphaSummary(ForegroundTextureAlphaTraceReport report)
+        {
+            var lines = new List<string>
+            {
+                "MapEditorTool tracealpha",
+                "Input: " + report.ImageFilePath,
+                "Image: " + report.ImageWidth + "x" + report.ImageHeight + " alpha=" + report.HasAlphaChannel,
+                "World: " + report.WorldWidth + "x" + report.WorldHeight + " threshold=" + report.AlphaThreshold,
+                "Counts: polygons=" + report.PolygonCount + " poly0_points=" + report.FirstPolygonPointCount
+            };
+
+            for (var i = 0; i < report.SamplePoints.Count; i++)
+            {
+                var point = report.SamplePoints[i];
+                lines.Add("  p" + i + "=" + FormatFloat(point.X) + "," + FormatFloat(point.Y));
+            }
 
             return string.Join(Environment.NewLine, lines.ToArray());
         }
@@ -250,6 +301,22 @@ namespace MapEditorTool.Cli
             if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
                 throw new ArgumentException("Invalid --" + key + ".");
             return parsed;
+        }
+
+        private static int ParseOptionalInt(string value, int defaultValue, string key)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return defaultValue;
+
+            int parsed;
+            if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))
+                throw new ArgumentException("Invalid --" + key + ".");
+            return parsed;
+        }
+
+        private static string FormatFloat(float value)
+        {
+            return value.ToString("0.###", CultureInfo.InvariantCulture);
         }
 
         private static string ToAbsoluteGodotPath(string godotRoot, string resPath)

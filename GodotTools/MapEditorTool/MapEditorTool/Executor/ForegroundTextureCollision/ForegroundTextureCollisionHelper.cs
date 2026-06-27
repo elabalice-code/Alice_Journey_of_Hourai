@@ -137,6 +137,21 @@ namespace MapEditorTool.Executor.ForegroundTextureCollision
                 bitmap.PixelFormat == PixelFormat.Format64bppPArgb;
         }
 
+        public static List<List<GodotVector2Data>> TraceAlphaPolygons(Bitmap sourceBitmap, int worldWidth, int worldHeight, int alphaThreshold)
+        {
+            if (sourceBitmap == null)
+                throw new ArgumentNullException("sourceBitmap");
+
+            using (var bitmap = Ensure32bppArgb(sourceBitmap))
+            {
+                return BuildCollisionPolygonsFromAlpha(
+                    bitmap,
+                    Math.Max(1, worldWidth),
+                    Math.Max(1, worldHeight),
+                    Clamp(alphaThreshold, 0, 254));
+            }
+        }
+
         public static int CountSolidTiles(CollisionLayoutData layout)
         {
             if (layout == null || layout.Solid == null)
