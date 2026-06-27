@@ -4,6 +4,7 @@
 # Generated logs and tool build outputs
 BuildLogs/
 GodotTools-Build/
+GodotTools/MapEditorTool/ReleasePackage/
 
 # .NET build outputs
 bin/

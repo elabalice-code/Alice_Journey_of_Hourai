@@ -8,5 +8,6 @@
     <AssemblyName>MapEditor</AssemblyName>
     <RootNamespace>MapEditor</RootNamespace>
     <LangVersion>latest</LangVersion>
+    <OutputPath>..\..\..\GodotTools-Build\MapEditor\</OutputPath>
   </PropertyGroup>
 </Project>

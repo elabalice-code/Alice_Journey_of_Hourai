@@ -9,9 +9,17 @@
 [node name="Map" type="Node2D"]
 
 
-metadata/collision_mode = "tile_foreground"
+metadata/collision_mode = "foreground_texture"
 metadata/collision_tile_path = "res://CoreEngine/Maps/Resources/Corridor/collision_tile.json"
-metadata/collision_fgtex_path = ""
+metadata/collision_fgtex_path = "res://CoreEngine/Maps/Resources/Corridor/collision_fgtex.json"
+
+[node name="ForegroundTextureLayer" type="Node2D" parent="."]
+z_index = -1
+
+[node name="ForegroundTexture" type="Sprite2D" parent="ForegroundTextureLayer"]
+centered = false
+position = Vector2(0, 0)
+
 [node name="BackgroundLayer" type="CanvasLayer" parent="."]
 layer = -100
 

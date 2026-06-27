@@ -18,6 +18,7 @@ public sealed partial class MainForm : Form
     private readonly MapProject _project = MapProject.CreateDefault();
     private string? _currentPath;
     private string? _godotRoot;
+    private string _pinnedStartingMapPath = "";
     private MapDefinition? _selectedMap;
     private readonly UndoManager _undo = new();
     private readonly PortalSyncActor _portalSyncActor;
@@ -81,7 +82,8 @@ public sealed partial class MainForm : Form
 
         var menu = BuildMenu();
 
-        _mapsList.DisplayMember = nameof(MapDefinition.DisplayName);
+        _mapsList.FormattingEnabled = true;
+        _mapsList.Format += FormatMapListItem;
         _mapsList.SelectedIndexChanged += (_, _) => OnSelectedMapChanged();
         _mapsList.HorizontalScrollbar = true;
         _mapsList.MouseMove += (_, e) => UpdateMapListToolTip(e.Location);
@@ -96,10 +98,14 @@ public sealed partial class MainForm : Form
         var mapsMenu = new ContextMenuStrip();
         var mapsAdd = new ToolStripMenuItem("新增地图", null, (_, _) => AddMap());
         var mapsDel = new ToolStripMenuItem("删除地图", null, (_, _) => RemoveSelectedMap());
-        mapsMenu.Items.AddRange([mapsAdd, mapsDel]);
+        var mapsPin = new ToolStripMenuItem("设为置顶", null, (_, _) => SetSelectedMapAsPinnedStart());
+        mapsMenu.Items.AddRange([mapsAdd, mapsDel, new ToolStripSeparator(), mapsPin]);
         mapsMenu.Opening += (_, e) =>
         {
-            mapsDel.Enabled = _mapsList.SelectedItem is MapDefinition;
+            var selectedMap = _mapsList.SelectedItem as MapDefinition;
+            mapsDel.Enabled = selectedMap != null;
+            mapsPin.Enabled = selectedMap != null;
+            mapsPin.Checked = selectedMap != null && IsPinnedStartingMap(selectedMap);
         };
         _mapsList.ContextMenuStrip = mapsMenu;
 
@@ -1770,6 +1776,7 @@ public sealed partial class MainForm : Form
             _currentPath = null;
             _godotRoot = root;
             GodotRootContext.CurrentRoot = root;
+            _pinnedStartingMapPath = ReadPinnedStartingMapPath(root);
             _undo.Clear();
             ReloadMapList(selectFirst: true);
             ReloadLinksList(selectFirst: true);
@@ -1947,6 +1954,20 @@ tile_map_data = PackedByteArray()
             return;
 
         var root = string.IsNullOrWhiteSpace(_godotRoot) ? GodotProjectLocator.FindGodotRoot(AppContext.BaseDirectory) : _godotRoot;
+        var removedPinnedStart = IsPinnedStartingMap(selected);
+        if (removedPinnedStart && !string.IsNullOrWhiteSpace(root))
+        {
+            try
+            {
+                WritePinnedStartingMapPath(root, "");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, ex.Message, "清除置顶失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(root))
         {
             try
@@ -1989,6 +2010,8 @@ tile_map_data = PackedByteArray()
         }
 
         _project.RemoveMapById(selected.Id);
+        if (removedPinnedStart)
+            _pinnedStartingMapPath = "";
         ReloadMapList(selectFirst: true);
         ReloadLinksList(selectFirst: true);
         UpdateStatus();
@@ -2054,6 +2077,121 @@ tile_map_data = PackedByteArray()
         _project.Links.Remove(selected);
         ReloadLinksList(selectFirst: true);
         UpdateStatus();
+    }
+
+    private void FormatMapListItem(object? sender, ListControlConvertEventArgs e)
+    {
+        if (e.ListItem is not MapDefinition map)
+            return;
+        var name = string.IsNullOrWhiteSpace(map.DisplayName) ? map.Id : map.DisplayName;
+        e.Value = IsPinnedStartingMap(map) ? $"[置顶] {name}" : name;
+    }
+
+    private bool IsPinnedStartingMap(MapDefinition map)
+    {
+        var scenePath = NormalizeResPath(map.ScenePath);
+        return scenePath.Length > 0 && string.Equals(scenePath, NormalizeResPath(_pinnedStartingMapPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void SetSelectedMapAsPinnedStart()
+    {
+        if (_mapsList.SelectedItem is not MapDefinition map)
+            return;
+        if (string.IsNullOrWhiteSpace(map.ScenePath) || !map.ScenePath.StartsWith("res://", StringComparison.Ordinal))
+        {
+            MessageBox.Show(this, "该地图没有有效的 Godot 场景路径，不能设为启动地图。", "设为置顶", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var root = string.IsNullOrWhiteSpace(_godotRoot) ? GodotProjectLocator.FindGodotRoot(AppContext.BaseDirectory) : _godotRoot;
+        try
+        {
+            WritePinnedStartingMapPath(root, map.ScenePath);
+            _godotRoot = root;
+            GodotRootContext.CurrentRoot = root;
+            _pinnedStartingMapPath = NormalizeResPath(map.ScenePath);
+            _mapsList.Refresh();
+            ShowStatusHint($"置顶房间已设为 {map.DisplayName}");
+            UpdateStatus();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, ex.Message, "设为置顶失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static string ReadPinnedStartingMapPath(string godotRoot)
+    {
+        var gamePath = Path.Combine(godotRoot, "CoreEngine", "Game.tscn");
+        if (!File.Exists(gamePath))
+            return "";
+
+        var scene = TscnParser.ParseFile(gamePath);
+        var gameNode = scene.Nodes.FirstOrDefault(x => string.Equals(x.Name, "Game", StringComparison.Ordinal));
+        if (gameNode == null || !gameNode.RawProps.TryGetValue("starting_map", out var raw))
+            return "";
+
+        var value = UnquoteGodotString(raw);
+        if (!value.StartsWith("uid://", StringComparison.OrdinalIgnoreCase))
+            return NormalizeResPath(value);
+
+        var resolved = ResolveUidToResPath(godotRoot, value);
+        return NormalizeResPath(resolved);
+    }
+
+    private static void WritePinnedStartingMapPath(string godotRoot, string scenePath)
+    {
+        var gamePath = Path.Combine(godotRoot, "CoreEngine", "Game.tscn");
+        if (!File.Exists(gamePath))
+            throw new FileNotFoundException("未找到 CoreEngine/Game.tscn。", gamePath);
+
+        var scene = TscnParser.ParseFile(gamePath);
+        var gameNode = scene.Nodes.FirstOrDefault(x => string.Equals(x.Name, "Game", StringComparison.Ordinal));
+        if (gameNode == null)
+            throw new InvalidOperationException("CoreEngine/Game.tscn 中没有找到 Game 节点。");
+
+        gameNode.RawProps["starting_map"] = string.IsNullOrWhiteSpace(scenePath) ? "\"\"" : $"\"{NormalizeResPath(scenePath)}\"";
+        TscnWriter.PatchFile(gamePath, scene, ["starting_map"]);
+    }
+
+    private static string ResolveUidToResPath(string godotRoot, string uid)
+    {
+        foreach (var file in Directory.EnumerateFiles(godotRoot, "*.tscn", SearchOption.AllDirectories))
+        {
+            if (file.Contains($"{Path.DirectorySeparatorChar}.godot{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                || file.Contains($"{Path.DirectorySeparatorChar}GodotTools{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                || file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            try
+            {
+                var scene = TscnParser.ParseFile(file);
+                if (!string.Equals(scene.SceneUid, uid, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return TryMakeResPath(godotRoot, file);
+            }
+            catch
+            {
+            }
+        }
+        return "";
+    }
+
+    private static string UnquoteGodotString(string raw)
+    {
+        raw = raw.Trim();
+        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+            return raw[1..^1];
+        return raw;
+    }
+
+    private static string NormalizeResPath(string? value)
+    {
+        value = (value ?? "").Trim();
+        if (value.Length == 0)
+            return "";
+        return value.Replace('\\', '/');
     }
 
     private void ReloadMapList(bool selectFirst = false, bool selectLast = false)

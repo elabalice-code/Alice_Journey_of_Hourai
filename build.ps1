@@ -237,17 +237,52 @@ function Get-ToolEntries {
             }
         }
 
+        $outputPath = ""
+        if ($tool.output) {
+            $outputPath = Resolve-ProjectPath -ProjectRoot $ProjectRoot -RelativePath (Resolve-ToolToken -Value ([string]$tool.output) -ProjectRoot $ProjectRoot -Manifest $manifest)
+        }
+
         $entries += [pscustomobject]@{
             Id = [string]$tool.id
             Name = [string]$tool.name
             Category = [string]$tool.category
             Project = $projectPath
+            Output = $outputPath
             SelfTestKind = if ($tool.selfTest) { [string]$tool.selfTest.kind } else { "" }
             SelfTestArgs = $selfTestArgs
         }
     }
 
     return $entries | Sort-Object Project
+}
+
+function Assert-ToolOutputFresh {
+    param(
+        [object]$Tool,
+        [datetime]$BuildStartedAt
+    )
+
+    if (-not $Tool.Output) {
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $Tool.Output)) {
+        throw "Tool output missing for $($Tool.Name): $($Tool.Output)"
+    }
+
+    $freshBinaries = @(
+        Get-ChildItem -LiteralPath $Tool.Output -Recurse -File |
+            Where-Object {
+                ($_.Extension -eq ".dll" -or $_.Extension -eq ".exe") -and
+                $_.LastWriteTime -ge $BuildStartedAt.AddSeconds(-2)
+            }
+    )
+
+    if (-not $freshBinaries -or $freshBinaries.Count -eq 0) {
+        throw "Tool output was not refreshed for $($Tool.Name): $($Tool.Output)"
+    }
+
+    Write-Host "Tool output OK: $($Tool.Output)"
 }
 
 function Invoke-ToolBuild {
@@ -264,10 +299,12 @@ function Invoke-ToolBuild {
         }
 
         Write-Host "== Tool build: $($tool.Name) =="
-        dotnet build $tool.Project -c Release --no-restore
+        $buildStartedAt = Get-Date
+        dotnet build $tool.Project -c Release --no-restore --no-incremental
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet build failed for $($tool.Name)"
         }
+        Assert-ToolOutputFresh -Tool $tool -BuildStartedAt $buildStartedAt
     }
 }
 

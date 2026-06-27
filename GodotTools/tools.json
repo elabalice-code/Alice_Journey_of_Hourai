@@ -91,7 +91,7 @@
       "category": "map",
       "purpose": "Map import, validation, editing support, portal animation extraction, and Godot scene patch helpers.",
       "project": "GodotTools/MapEditor/MapEditor/MapEditor.csproj",
-      "output": "GodotTools/MapEditor/MapEditor/bin/Release/net8.0-windows",
+      "output": "GodotTools-Build/MapEditor",
       "launch": {
         "kind": "dotnet-run",
         "args": []

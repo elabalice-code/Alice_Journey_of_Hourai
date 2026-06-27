@@ -1,0 +1,40 @@
+using System;
+using System.IO;
+using System.Text;
+
+namespace MapEditorTool.Executor
+{
+    public sealed class DeveloperCommentExecutor
+    {
+        private readonly string _commentLogPath;
+
+        public DeveloperCommentExecutor(string baseDirectory)
+        {
+            _commentLogPath = Path.Combine(
+                baseDirectory ?? AppDomain.CurrentDomain.BaseDirectory,
+                "logs",
+                "developer-comments.log");
+        }
+
+        public string CommentLogPath
+        {
+            get { return _commentLogPath; }
+        }
+
+        public void WriteComment(string source, string comment)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_commentLogPath));
+
+            var safeComment = (comment ?? string.Empty)
+                .Replace("\r", "\\r")
+                .Replace("\n", "\\n");
+            var line = string.Format(
+                "{0:yyyy-MM-dd HH:mm:ss.fff zzz}\t{1}\t{2}",
+                DateTimeOffset.Now,
+                source ?? string.Empty,
+                safeComment);
+
+            File.AppendAllText(_commentLogPath, line + Environment.NewLine, Encoding.UTF8);
+        }
+    }
+}
