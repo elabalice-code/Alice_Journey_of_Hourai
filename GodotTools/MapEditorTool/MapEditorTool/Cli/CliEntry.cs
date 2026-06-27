@@ -8,6 +8,7 @@ using System.Text;
 using MapEditorTool.Executor.ForegroundTextureCollision;
 using MapEditorTool.Executor.MapImport;
 using MapEditorTool.Executor.MapReport;
+using MapEditorTool.Executor.PortalAnimation;
 using MapEditorTool.Executor.ProjectFile;
 using MapEditorTool.Executor.RuntimeVerify;
 using MapEditorTool.Executor.ScenePatch;
@@ -42,6 +43,8 @@ namespace MapEditorTool.Cli
                         return RunPatchPosition(opts);
                     case "tracealpha":
                         return RunTraceAlpha(opts);
+                    case "portalanim":
+                        return RunPortalAnimation(opts);
                     case "agent-self-test":
                     case "--agent-self-test":
                         return RunAgentSelfTest(opts);
@@ -70,6 +73,7 @@ namespace MapEditorTool.Cli
             Console.WriteLine("  MapEditorTool.exe validate --godotRoot <dir> --in <file> [--summary]");
             Console.WriteLine("  MapEditorTool.exe patchpos --godotRoot <dir> --scene <res://...> --nodePath <path> --x <num> --y <num>");
             Console.WriteLine("  MapEditorTool.exe tracealpha --in <image> [--worldW <num>] [--worldH <num>] [--threshold <0-254>] [--summary]");
+            Console.WriteLine("  MapEditorTool.exe portalanim --godotRoot <dir> --in <mp4> [--outDir <res://...|abs>] [--pattern <name_%03d.png>] [--noKeyout] [--summary]");
             Console.WriteLine("  MapEditorTool.exe agent-self-test [--godotRoot <dir>]");
             return 0;
         }
@@ -219,6 +223,29 @@ namespace MapEditorTool.Cli
             return 0;
         }
 
+        private static int RunPortalAnimation(Dictionary<string, string> opts)
+        {
+            var godotRoot = ResolveGodotRoot(opts, true);
+            var input = RequireOption(opts, "in");
+            var outputDirectory = GetOption(opts, "outDir");
+            var pattern = GetOption(opts, "pattern");
+            var keyout = !opts.ContainsKey("noKeyout");
+            var result = new PortalAnimationExecutor().ExtractPortalAnimationFrames(
+                godotRoot,
+                input,
+                outputDirectory,
+                pattern,
+                keyout,
+                24);
+
+            if (opts.ContainsKey("summary"))
+                Console.WriteLine(FormatPortalAnimationSummary(result, keyout));
+            else
+                Console.WriteLine(result.OutputDirectoryResPath);
+
+            return 0;
+        }
+
         private static string FormatImportSummary(string godotRoot, string output, MapProject project)
         {
             var lines = new List<string>
@@ -244,6 +271,24 @@ namespace MapEditorTool.Cli
                 lines.Add("  none");
             foreach (var scene in sampleScenes)
                 lines.Add("  " + scene);
+
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
+        private static string FormatPortalAnimationSummary(PortalAnimationImportResult result, bool keyout)
+        {
+            var lines = new List<string>
+            {
+                "MapEditorTool portalanim",
+                "Input: " + result.SourceVideoFilePath,
+                "Output: " + result.OutputDirectoryPath,
+                "Resource: " + result.OutputDirectoryResPath,
+                "Frames: " + result.GeneratedFrameCount,
+                "Keyout: " + keyout
+            };
+
+            foreach (var frame in result.GeneratedFrameFiles.Take(5))
+                lines.Add("  " + frame);
 
             return string.Join(Environment.NewLine, lines.ToArray());
         }

@@ -298,6 +298,12 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("ForegroundTextureCollisionExecutor")
                     && text.Contains("FormatTraceAlphaSummary"),
                 "MapEditorTool restores the tracealpha CLI diagnostic through ForegroundTextureCollisionExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-cli-portalanim", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
+                text => text.Contains("case \"portalanim\"")
+                    && text.Contains("RunPortalAnimation")
+                    && text.Contains("PortalAnimationExecutor")
+                    && text.Contains("FormatPortalAnimationSummary"),
+                "MapEditorTool restores the portalanim CLI extractor through PortalAnimationExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-loads-saves-collision-layout-json", "GodotTools/MapEditorTool/MapEditorTool/Executor/CollisionLayout/CollisionLayoutExecutor.cs",
                 text => text.Contains("LoadLayout")
                     && text.Contains("SaveLayout")
@@ -722,6 +728,12 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("KeyoutTolerance")
                     && text.Contains("ReapplyKeyout"),
                 "MapEditorTool PortalEditingExecutor writes portal animation video imports, manual frame directories, settings, and keyout changes through Executor-owned side effects.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-executor-portal-animation-cli-extract", "GodotTools/MapEditorTool/MapEditorTool/Executor/PortalAnimation/PortalAnimationExecutor.cs",
+                text => text.Contains("ExtractPortalAnimationFrames")
+                    && text.Contains("ResolveBundledFfmpegPath")
+                    && text.Contains("KeyOutBlackBackgroundInDir")
+                    && text.Contains("OutputDirectoryResPath"),
+                "MapEditorTool PortalAnimationExecutor exposes the non-interactive portal animation frame extractor used by CLI.");
             AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-link-navigation-state", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
                 text => text.Contains("SelectMapById")
                     && text.Contains("SelectLink(MapLink link)")

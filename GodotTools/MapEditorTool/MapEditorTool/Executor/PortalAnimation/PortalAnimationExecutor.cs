@@ -126,6 +126,51 @@ namespace MapEditorTool.Executor.PortalAnimation
                 Math.Max(0.001f, portal.Upscale));
         }
 
+        public PortalAnimationImportResult ExtractPortalAnimationFrames(
+            string godotRoot,
+            string sourceVideoPath,
+            string outputDirectoryPath,
+            string outputPattern,
+            bool keyOutBlackBackground,
+            byte keyoutTolerance)
+        {
+            godotRoot = ValidateGodotRoot(godotRoot);
+            sourceVideoPath = ToAbsoluteGodotPathIfNeeded(godotRoot, sourceVideoPath);
+            if (string.IsNullOrWhiteSpace(sourceVideoPath) || !File.Exists(sourceVideoPath))
+                throw new FileNotFoundException("Input mp4 not found.", sourceVideoPath);
+
+            outputDirectoryPath = ResolvePortalAnimationOutputDirectory(godotRoot, sourceVideoPath, outputDirectoryPath);
+            outputPattern = SanitizeFramePattern(outputPattern);
+            Directory.CreateDirectory(outputDirectoryPath);
+
+            var ffmpegPath = ResolveBundledFfmpegPath(godotRoot);
+            RunProcessChecked(
+                ffmpegPath,
+                "-y -hide_banner -loglevel error -i " + QuoteProcessArg(sourceVideoPath) +
+                " -vsync 0 -start_number 0 " + QuoteProcessArg(Path.Combine(outputDirectoryPath, outputPattern)));
+
+            if (keyOutBlackBackground)
+                KeyOutBlackBackgroundInDir(outputDirectoryPath, keyoutTolerance);
+
+            var generatedFrames = Directory.EnumerateFiles(outputDirectoryPath, "*.png", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .Select(Path.GetFullPath)
+                .ToList();
+            var outputDirectoryResPath = TryMakeResPath(godotRoot, outputDirectoryPath);
+
+            return new PortalAnimationImportResult
+            {
+                SourceVideoFilePath = Path.GetFullPath(sourceVideoPath),
+                OutputDirectoryPath = Path.GetFullPath(outputDirectoryPath),
+                OutputDirectoryResPath = outputDirectoryResPath,
+                GeneratedFrameCount = generatedFrames.Count,
+                GeneratedFrameFiles = generatedFrames,
+                Summary = "portalAnimationFrames=" + generatedFrames.Count +
+                    "; keyOutBlackBackground=" + keyOutBlackBackground +
+                    "; outputDirectory=" + outputDirectoryResPath
+            };
+        }
+
         public static float ComputePortalAnimFps(Portal portal)
         {
             if (portal == null)
@@ -448,6 +493,35 @@ namespace MapEditorTool.Executor.PortalAnimation
             }
 
             throw new FileNotFoundException(fileName + " not found. Checked MapEditorTool, legacy MapEditor, and application output directories.", fileName);
+        }
+
+        private static string ResolvePortalAnimationOutputDirectory(string godotRoot, string sourceVideoPath, string outputDirectoryPath)
+        {
+            outputDirectoryPath = (outputDirectoryPath ?? string.Empty).Trim();
+            if (outputDirectoryPath.Length > 0)
+            {
+                if (outputDirectoryPath.StartsWith("res://", StringComparison.Ordinal))
+                    return ToAbsoluteGodotPath(godotRoot, outputDirectoryPath);
+                if (Path.IsPathRooted(outputDirectoryPath))
+                    return Path.GetFullPath(outputDirectoryPath);
+                return Path.GetFullPath(outputDirectoryPath);
+            }
+
+            var baseName = SanitizeFolderName(Path.GetFileNameWithoutExtension(sourceVideoPath));
+            if (string.IsNullOrWhiteSpace(baseName))
+                baseName = "PortalAnim";
+
+            return Path.Combine(godotRoot, "CoreEngine", "Resources", "PortalAnimations", baseName);
+        }
+
+        private static string SanitizeFramePattern(string outputPattern)
+        {
+            outputPattern = (outputPattern ?? string.Empty).Trim();
+            if (outputPattern.Length == 0)
+                return "frame_%03d.png";
+
+            var fileName = Path.GetFileName(outputPattern);
+            return string.IsNullOrWhiteSpace(fileName) ? "frame_%03d.png" : fileName;
         }
 
         private static byte ClampByte(int value)
