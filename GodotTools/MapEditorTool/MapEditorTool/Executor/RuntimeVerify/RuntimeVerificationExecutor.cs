@@ -176,6 +176,35 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("CollisionFromJson")
                     && text.Contains("selected_path_from_metadata"),
                 "MapRuntimeSurface consumes collision metadata and selects MapEditor collision JSON paths.");
+            AddTextCheck(checks, godotRoot, "map-runtime-surface-owns-foreground-layer-adapter", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+                text => text.Contains("ensure_world_foreground_texture_sprite")
+                    && text.Contains("ForegroundTextureLayer/ForegroundTexture")
+                    && text.Contains("Sprite2D.new"),
+                "MapRuntimeSurface adapts ForegroundTextureLayer/ForegroundTexture into a world Sprite2D.");
+            AddTextCheck(checks, godotRoot, "map-runtime-surface-consumes-texture-transform-metadata", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+                text => text.Contains("foreground_texture_anchor")
+                    && text.Contains("foreground_texture_upscale")
+                    && text.Contains("background_texture_upscale")
+                    && text.Contains("BACKGROUND_PERSPECTIVE_SHADER_CODE")
+                    && text.Contains("update_background_texture_focus"),
+                "MapRuntimeSurface consumes foreground/background texture transform metadata.");
+            AddTextCheck(checks, godotRoot, "map-runtime-surface-owns-background-diagnostics", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+                text => text.Contains("print_background_diagnostics")
+                    && text.Contains("BackgroundLayer/BackgroundTexture")
+                    && text.Contains("viewport_size"),
+                "MapRuntimeSurface owns BackgroundLayer/BackgroundTexture diagnostics.");
+            AddTextCheck(checks, godotRoot, "map-runtime-surface-applies-camera-bounds", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+                text => text.Contains("apply_camera_limits_from_metadata")
+                    && text.Contains("map_world_bounds_rect")
+                    && text.Contains("camera.limit_left")
+                    && text.Contains("camera.limit_bottom"),
+                "MapRuntimeSurface applies camera bounds from MapEditor collision/texture metadata.");
+            AddTextCheck(checks, godotRoot, "game-delegates-map-runtime-surface", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("MapRuntimeSurfaceScript.apply_surface_metadata(map, player)")
+                    && text.Contains("MapRuntimeSurfaceScript.update_background_texture_focus")
+                    && text.Contains("MapRuntimeSurfaceScript.apply_camera_limits_from_metadata")
+                    && text.Contains("MapRuntimeSurfaceScript.print_background_diagnostics"),
+                "Game.gd delegates MapEditor collision, texture, and camera runtime work to MapRuntimeSurface.");
             AddTextCheck(checks, godotRoot, "map-room-load-orchestrator-loads-map-scenes", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
                 text => text.Contains("load_room_with_progress")
                     && text.Contains("load_packed_scene_threaded")
@@ -204,6 +233,36 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("tile_map_data")
                     && text.Contains("DecodeTileMapData"),
                 "MapEditorTool importer reads TileMapLayer tile_set and tile_map_data from map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-writes-texture-transform-metadata", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapTexture/MapTextureExecutor.cs",
+                text => text.Contains("PatchTextureMetadata")
+                    && text.Contains("metadata/foreground_texture_anchor")
+                    && text.Contains("metadata/foreground_texture_upscale")
+                    && text.Contains("metadata/background_texture_anchor")
+                    && text.Contains("metadata/background_texture_upscale")
+                    && text.Contains("TscnWriter.PatchFile"),
+                "MapEditorTool writes foreground/background texture transform metadata through MapTextureExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-writes-template-texture-fields", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapTexture/MapTextureExecutor.cs",
+                text => text.Contains("PatchMapTextures")
+                    && text.Contains("IsTemplateRoomMap")
+                    && text.Contains("\"background_texture\"")
+                    && text.Contains("\"foreground_texture\"")
+                    && text.Contains("\"template\"")
+                    && text.Contains("TscnWriter.PatchFileWithExtResources"),
+                "MapEditorTool writes TemplateRoomMap template, foreground_texture, and background_texture fields through MapTextureExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-writes-room-texture-nodes", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapTexture/MapTextureExecutor.cs",
+                text => text.Contains("EnsureBackgroundLayerNodes")
+                    && text.Contains("EnsureForegroundTextureWorldNodes")
+                    && text.Contains("BackgroundLayer/BackgroundTexture")
+                    && text.Contains("ForegroundTextureLayer/ForegroundTexture")
+                    && text.Contains("ApplyTextureNodePatch"),
+                "MapEditorTool writes ordinary-room background and foreground texture nodes in the expected runtime node paths.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-writes-tile-map-data", "GodotTools/MapEditorTool/MapEditorTool/Executor/TileCollision/TileCollisionExecutor.cs",
+                text => text.Contains("ApplyTileCollisionEdits")
+                    && text.Contains("ApplyTileCollisionAlternativeEdits")
+                    && text.Contains("PatchTileMapDataAlternative")
+                    && text.Contains("tile_map_data")
+                    && text.Contains("TscnWriter.PatchFile"),
+                "MapEditorTool writes edited TileMapLayer tile_map_data back into map scenes through TileCollisionExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-writes-background-tile-layer-visibility", "GodotTools/MapEditorTool/MapEditorTool/Executor/ScenePatch/ScenePatchExecutor.cs",
                 text => text.Contains("PatchBackgroundTileLayerVisibility")
                     && text.Contains("TileMapLayer")
