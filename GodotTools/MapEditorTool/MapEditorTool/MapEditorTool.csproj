@@ -40,6 +40,7 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Deployment" />
+    <Reference Include="System.Design" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Net.Http" />
@@ -72,7 +73,9 @@
     <Compile Include="Executor\MapTexture\MapTextureModels.cs" />
     <Compile Include="Executor\PortalAnimation\PortalAnimationExecutor.cs" />
     <Compile Include="Executor\PortalAnimation\PortalAnimationModels.cs" />
+    <Compile Include="Executor\PortalEditing\PortalEditingExecutor.cs" />
     <Compile Include="Executor\ProjectFile\ProjectFileExecutor.cs" />
+    <Compile Include="Executor\ResourcePath\ResourcePathExecutor.cs" />
     <Compile Include="Executor\RuntimeVerify\RuntimeVerificationExecutor.cs" />
     <Compile Include="Executor\RuntimeVerify\RuntimeVerificationModels.cs" />
     <Compile Include="Executor\ScenePatch\ScenePatchExecutor.cs" />
@@ -99,6 +102,10 @@
     <Compile Include="UI\Form1.Designer.cs">
       <DependentUpon>Form1.cs</DependentUpon>
     </Compile>
+    <Compile Include="UI\GodotResPathEditor.cs" />
+    <Compile Include="UI\LinksPreviewCanvas.cs" />
+    <Compile Include="UI\MapPreviewCanvas.cs" />
+    <Compile Include="UI\PortalPropertyEditors.cs" />
     <Compile Include="UI\DeveloperCommentBox.cs">
       <SubType>Form</SubType>
     </Compile>

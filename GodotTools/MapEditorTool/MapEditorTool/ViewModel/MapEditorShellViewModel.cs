@@ -79,6 +79,19 @@ namespace MapEditorTool.ViewModel
             }
         }
 
+        public MapLink SelectedLink
+        {
+            get
+            {
+                if (_currentProject == null || _currentProject.Links == null)
+                    return null;
+                var index = _snapshot.SelectedLinkIndex;
+                if (index < 0 || index >= _currentProject.Links.Count)
+                    return null;
+                return _currentProject.Links[index];
+            }
+        }
+
         public static MapEditorShellViewModel CreateShellDefaults()
         {
             return new MapEditorShellViewModel();
@@ -179,6 +192,34 @@ namespace MapEditorTool.ViewModel
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
+        public void SelectLinkByIndex(int index)
+        {
+            if (_currentProject == null || _currentProject.Links == null || _currentProject.Links.Count == 0)
+            {
+                _snapshot.SelectedLinkIndex = -1;
+                _snapshot.LinkState = new LinkShellState();
+                _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+                return;
+            }
+
+            if (index < 0 || index >= _currentProject.Links.Count)
+                index = 0;
+
+            _snapshot.SelectedLinkIndex = index;
+            _snapshot.LinkState = BuildLinkState(SelectedLink);
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void MarkSelectedMapEdited(string propertyName)
+        {
+            RefreshProjectSnapshot();
+            _snapshot.ProjectDirty = true;
+            _snapshot.StatusText = string.IsNullOrWhiteSpace(propertyName)
+                ? "Selected map updated."
+                : "Selected map updated: " + propertyName;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
         public void AddMap(MapDefinition map)
         {
             if (map == null)
@@ -236,8 +277,12 @@ namespace MapEditorTool.ViewModel
                 .ToArray();
 
             _snapshot.SelectedMapIndex = _selectedMapIndex;
+            if (_snapshot.SelectedLinkIndex >= _currentProject.Links.Count)
+                _snapshot.SelectedLinkIndex = _currentProject.Links.Count - 1;
+            if (_currentProject.Links.Count == 0)
+                _snapshot.SelectedLinkIndex = -1;
             _snapshot.MapState = BuildMapState(SelectedMap);
-            _snapshot.LinkState = BuildLinkState(_currentProject.Links.FirstOrDefault());
+            _snapshot.LinkState = BuildLinkState(SelectedLink);
         }
 
         public void SetStatusText(string statusText)

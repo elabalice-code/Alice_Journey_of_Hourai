@@ -245,6 +245,58 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("OpenCommentLog")
                     && text.Contains("menu.developer.openLog"),
                 "MapEditorTool UI can open the developer comment log through an executor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-resource-path-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ResourcePath/ResourcePathExecutor.cs",
+                text => text.Contains("ConvertToProjectResourcePath")
+                    && text.Contains("EnsurePreferredProjectResourceDirectory")
+                    && text.Contains("ImportFileToDirectory")
+                    && text.Contains("ImportDirectoryToDirectory")
+                    && text.Contains("res://"),
+                "MapEditorTool can import external files or folders into the Godot project and return res:// paths.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-property-grid-resource-path-editor", "GodotTools/MapEditorTool/MapEditorTool/UI/GodotResPathEditor.cs",
+                text => text.Contains("UITypeEditor")
+                    && text.Contains("OpenFileDialog")
+                    && text.Contains("FolderBrowserDialog")
+                    && text.Contains("ResourcePathExecutor")
+                    && text.Contains("AutoResPathEditorTypeDescriptionProvider"),
+                "MapEditorTool UI attaches a resource path editor to PropertyGrid path fields while keeping import side effects in an executor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-portal-editing-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/PortalEditing/PortalEditingExecutor.cs",
+                text => text.Contains("CreatePortal")
+                    && text.Contains("ApplyPortalPropertyChange")
+                    && text.Contains("BuildTargetMapChoices")
+                    && text.Contains("BuildTargetAreaChoices")
+                    && text.Contains("ScenePatchExecutor")
+                    && text.Contains("PortalAnimationExecutor"),
+                "MapEditorTool can create portal nodes and write portal property changes through executors.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-portal-property-grid-editor", "GodotTools/MapEditorTool/MapEditorTool/UI/PortalPropertyEditors.cs",
+                text => text.Contains("PortalCollectionEditor")
+                    && text.Contains("PortalTargetMapEditor")
+                    && text.Contains("PortalTargetAreaEditor")
+                    && text.Contains("PortalEditingExecutor")
+                    && text.Contains("PropertyValueChanged"),
+                "MapEditorTool UI restores Portal PropertyGrid collection editing while delegating side effects to PortalEditingExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("MapPreviewCanvas")
+                    && text.Contains("DrawTileLayers")
+                    && text.Contains("DrawPortals")
+                    && text.Contains("DrawCollisionOverlay")
+                    && text.Contains("GodotTileSetLoader")
+                    && text.Contains("SetData"),
+                "MapEditorTool UI has a real read-only map preview canvas for imported maps, tile layers, textures, portals, and collision overlays.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-drives-collision-overlay", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("RefreshCollisionOverlayFromToolbar")
+                    && text.Contains("SetCollisionOverlay")
+                    && text.Contains("ApplyCollisionModeSelectionToMap")
+                    && text.Contains("viewModeCombo")
+                    && text.Contains("collisionTargetCombo"),
+                "MapEditorTool toolbar can drive collision overlay loading and active collision mode selection.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
+                text => text.Contains("LinksPreviewCanvas")
+                    && text.Contains("DrawEdges")
+                    && text.Contains("DrawNodes")
+                    && text.Contains("MapLink")
+                    && text.Contains("GraphNode")
+                    && text.Contains("SetData"),
+                "MapEditorTool UI has a read-only links preview graph for imported map connections.");
             AddTextCheck(checks, godotRoot, "mapeditortool-project-file-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ProjectFile/ProjectFileExecutor.cs",
                 text => text.Contains("LoadProject") && text.Contains("SaveProject"),
                 "MapEditorTool project file executor can load and save MapProject JSON.");
