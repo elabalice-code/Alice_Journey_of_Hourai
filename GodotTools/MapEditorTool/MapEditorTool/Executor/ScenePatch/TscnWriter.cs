@@ -18,6 +18,19 @@ namespace MapEditorTool.Executor.ScenePatch
             if (keysToPatch == null || keysToPatch.Count == 0)
                 return false;
 
+            return PatchFileCore(filePath, scene, keysToPatch, false);
+        }
+
+        public static bool PatchFileWithExtResources(string filePath, TscnScene scene, IReadOnlyCollection<string> keysToPatch)
+        {
+            if (!File.Exists(filePath))
+                throw new FileNotFoundException("TSCN file not found.", filePath);
+
+            return PatchFileCore(filePath, scene, keysToPatch ?? new string[0], true);
+        }
+
+        private static bool PatchFileCore(string filePath, TscnScene scene, IReadOnlyCollection<string> keysToPatch, bool patchExtResources)
+        {
             var byPath = new Dictionary<string, TscnNode>(StringComparer.Ordinal);
             foreach (var node in scene.Nodes)
             {
@@ -28,6 +41,9 @@ namespace MapEditorTool.Executor.ScenePatch
 
             var lines = File.ReadAllLines(filePath).ToList();
             var dirty = false;
+
+            if (patchExtResources)
+                dirty = InsertMissingExtResources(lines, scene) || dirty;
 
             for (var i = 0; i < lines.Count; i++)
             {
@@ -97,6 +113,44 @@ namespace MapEditorTool.Executor.ScenePatch
             return dirty;
         }
 
+        private static bool InsertMissingExtResources(List<string> lines, TscnScene scene)
+        {
+            if (scene == null || scene.ExtResources.Count == 0)
+                return false;
+
+            var existingIds = new HashSet<string>(StringComparer.Ordinal);
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var text = lines[i].TrimStart();
+                if (!text.StartsWith("[ext_resource", StringComparison.Ordinal))
+                    continue;
+
+                var attrs = ParseAttributes(lines[i]);
+                string id;
+                if (attrs.TryGetValue("id", out id) && id.Length > 0)
+                    existingIds.Add(id);
+            }
+
+            var toInsert = new List<string>();
+            foreach (var resource in scene.ExtResources)
+            {
+                if (string.IsNullOrWhiteSpace(resource.Id) ||
+                    string.IsNullOrWhiteSpace(resource.Path) ||
+                    string.IsNullOrWhiteSpace(resource.Type) ||
+                    existingIds.Contains(resource.Id))
+                    continue;
+
+                toInsert.Add(BuildExtResourceLine(resource));
+                existingIds.Add(resource.Id);
+            }
+
+            if (toInsert.Count == 0)
+                return false;
+
+            lines.InsertRange(FindExtResourceInsertIndex(lines), toInsert);
+            return true;
+        }
+
         private static string ComputeNodePath(string parent, string name)
         {
             parent = (parent ?? string.Empty).Trim();
@@ -126,6 +180,36 @@ namespace MapEditorTool.Executor.ScenePatch
         private static Regex BuildPropRegex(string key)
         {
             return new Regex("^\\s*" + Regex.Escape(key) + "\\s*=", RegexOptions.CultureInvariant);
+        }
+
+        private static int FindExtResourceInsertIndex(List<string> lines)
+        {
+            var lastExt = -1;
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var text = lines[i].TrimStart();
+                if (text.StartsWith("[ext_resource", StringComparison.Ordinal))
+                    lastExt = i;
+            }
+
+            if (lastExt >= 0)
+                return lastExt + 1;
+
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var text = lines[i].TrimStart();
+                if (text.StartsWith("[node", StringComparison.Ordinal) || text.StartsWith("[sub_resource", StringComparison.Ordinal))
+                    return i;
+            }
+
+            return lines.Count;
+        }
+
+        private static string BuildExtResourceLine(TscnExtResource resource)
+        {
+            return "[ext_resource type=\"" + resource.Type.Trim() +
+                "\" path=\"" + resource.Path.Trim().Replace("\\", "/") +
+                "\" id=\"" + resource.Id.Trim() + "\"]";
         }
     }
 }

@@ -48,6 +48,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Executor\DeveloperCommentExecutor.cs" />
+    <Compile Include="Executor\GameSettings\GameSettingsExecutor.cs" />
+    <Compile Include="Executor\GameSettings\GameSettingsModels.cs" />
+    <Compile Include="Executor\MapCreation\MapCreationExecutor.cs" />
+    <Compile Include="Executor\MapCreation\MapCreationModels.cs" />
+    <Compile Include="Executor\MapDeletion\MapDeletionExecutor.cs" />
+    <Compile Include="Executor\MapDeletion\MapDeletionModels.cs" />
     <Compile Include="Executor\MapImport\GodotMapImporter.cs" />
     <Compile Include="Executor\MapImport\GodotProjectLocator.cs" />
     <Compile Include="Executor\MapImport\MapImportExecutor.cs" />
@@ -55,12 +61,19 @@
     <Compile Include="Executor\MapImport\Tscn\TscnScene.cs" />
     <Compile Include="Executor\MapReport\MapReportExecutor.cs" />
     <Compile Include="Executor\MapReport\MapReportModels.cs" />
+    <Compile Include="Executor\MapTexture\MapTextureExecutor.cs" />
+    <Compile Include="Executor\MapTexture\MapTextureModels.cs" />
+    <Compile Include="Executor\PortalAnimation\PortalAnimationExecutor.cs" />
+    <Compile Include="Executor\PortalAnimation\PortalAnimationModels.cs" />
     <Compile Include="Executor\ProjectFile\ProjectFileExecutor.cs" />
     <Compile Include="Executor\RuntimeVerify\RuntimeVerificationExecutor.cs" />
     <Compile Include="Executor\RuntimeVerify\RuntimeVerificationModels.cs" />
     <Compile Include="Executor\ScenePatch\ScenePatchExecutor.cs" />
     <Compile Include="Executor\ScenePatch\ScenePatchResult.cs" />
     <Compile Include="Executor\ScenePatch\TscnWriter.cs" />
+    <Compile Include="Executor\TileCollision\GodotTileSetLoader.cs" />
+    <Compile Include="Executor\TileCollision\TileCollisionExecutor.cs" />
+    <Compile Include="Executor\TileCollision\TileCollisionModels.cs" />
     <Compile Include="Models\MapProject.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalDecision.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalMachine.cs" />
