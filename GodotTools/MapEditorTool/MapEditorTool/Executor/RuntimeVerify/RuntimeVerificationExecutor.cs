@@ -332,6 +332,29 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("EvictImageCache")
                     && text.Contains("SetData"),
                 "MapEditorTool UI has a real read-only map preview canvas for imported maps, tile layers, textures, portals, and collision overlays.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-canvas-hover-tooltips", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("HoverHintRequested += CanvasHoverHintRequested")
+                    && text.Contains("BuildPortalHoverText")
+                    && text.Contains("BuildEntityHoverText")
+                    && text.Contains("CanvasHoverHintRequested")
+                    && text.Contains("_lastHoverHintText")
+                    && text.Contains("_toolTip.Show"),
+                "MapEditorTool UI restores hover tooltips for map preview markers and the links preview graph.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-hover-events", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("HoverHintRequested")
+                    && text.Contains("GetPortalHoverText")
+                    && text.Contains("GetEntityHoverText")
+                    && text.Contains("UpdateHoverHint")
+                    && text.Contains("HitTestPortal")
+                    && text.Contains("HitTestEntity"),
+                "MapEditorTool map preview publishes hover hints for portal and entity markers.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-hover-events", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
+                text => text.Contains("HoverHintRequested")
+                    && text.Contains("BuildNodeHoverText")
+                    && text.Contains("BuildEdgeHoverText")
+                    && text.Contains("HitTestNode")
+                    && text.Contains("HitTestEdge"),
+                "MapEditorTool links preview publishes hover hints for graph nodes and edges.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-portal-drag", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("PortalMoveCommitted")
                     && text.Contains("PortalAddRequested")

@@ -24,6 +24,7 @@ namespace MapEditorTool.UI
         public event EventHandler<LinkSelectedEventArgs> LinkSelected;
         public event EventHandler<PortalSelectedEventArgs> PortalSelected;
         public event EventHandler<PortalTargetRequestedEventArgs> PortalTargetRequested;
+        public event EventHandler<HoverHintRequestedEventArgs> HoverHintRequested;
 
         public LinksPreviewCanvas()
         {
@@ -101,9 +102,25 @@ namespace MapEditorTool.UI
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            Cursor = HitTestNode(e.Location) != null || HitTestEdge(e.Location) != null
+            var node = HitTestNode(e.Location);
+            var edge = node == null ? HitTestEdge(e.Location) : null;
+            Cursor = node != null || edge != null
                 ? Cursors.Hand
                 : Cursors.Default;
+
+            if (node != null)
+                RaiseHoverHint(BuildNodeHoverText(node), e.Location);
+            else if (edge != null)
+                RaiseHoverHint(BuildEdgeHoverText(edge), e.Location);
+            else
+                ClearHoverHint();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            ClearHoverHint();
+            Cursor = Cursors.Default;
         }
 
         private void RebuildGraph()
@@ -266,6 +283,53 @@ namespace MapEditorTool.UI
             }
 
             return best;
+        }
+
+        private string BuildNodeHoverText(GraphNode node)
+        {
+            if (node == null)
+                return string.Empty;
+
+            var inCount = 0;
+            var outCount = 0;
+            foreach (var edge in _edges)
+            {
+                if (string.Equals(edge.From.MapId, node.MapId, StringComparison.Ordinal))
+                    outCount++;
+                if (string.Equals(edge.To.MapId, node.MapId, StringComparison.Ordinal))
+                    inCount++;
+            }
+
+            return "Map: " + node.Label + Environment.NewLine +
+                "In: " + inCount + "  Out: " + outCount;
+        }
+
+        private string BuildEdgeHoverText(GraphEdge edge)
+        {
+            if (edge == null || edge.Link == null)
+                return string.Empty;
+
+            var from = edge.From == null ? string.Empty : edge.From.Label;
+            var to = edge.To == null ? string.Empty : edge.To.Label;
+            var fromPortal = edge.Link.From == null ? string.Empty : (edge.Link.From.PortalId ?? string.Empty).Trim();
+            var toPortal = edge.Link.To == null ? string.Empty : (edge.Link.To.PortalId ?? string.Empty).Trim();
+            var portalLine = fromPortal.Length == 0 && toPortal.Length == 0
+                ? string.Empty
+                : Environment.NewLine + "Portal: " + fromPortal + " -> " + toPortal;
+
+            return from + " -> " + to + portalLine;
+        }
+
+        private void RaiseHoverHint(string text, Point location)
+        {
+            var handler = HoverHintRequested;
+            if (handler != null)
+                handler(this, new HoverHintRequestedEventArgs(text, location));
+        }
+
+        private void ClearHoverHint()
+        {
+            RaiseHoverHint(string.Empty, Point.Empty);
         }
 
         private static float DistanceToSegment(PointF point, PointF start, PointF end)

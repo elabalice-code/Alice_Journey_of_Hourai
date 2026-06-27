@@ -51,10 +51,13 @@ namespace MapEditorTool.UI
         private float _dragOffsetY;
         private bool _dragMoved;
 
+        public Func<Portal, string> GetPortalHoverText { get; set; }
+        public Func<PlacedEntity, string> GetEntityHoverText { get; set; }
         public event EventHandler<PortalMoveCommittedEventArgs> PortalMoveCommitted;
         public event EventHandler<PortalAddRequestedEventArgs> PortalAddRequested;
         public event EventHandler<PortalContextRequestedEventArgs> PortalContextRequested;
         public event EventHandler<EntityMoveCommittedEventArgs> EntityMoveCommitted;
+        public event EventHandler<HoverHintRequestedEventArgs> HoverHintRequested;
         public event EventHandler<CollisionLayoutEditedEventArgs> CollisionLayoutEdited;
         public event EventHandler<CollisionLayoutPolygonSelectedEventArgs> CollisionLayoutPolygonSelected;
         public event EventHandler<CollisionLayoutPolygonEditedEventArgs> CollisionLayoutPolygonEdited;
@@ -343,12 +346,16 @@ namespace MapEditorTool.UI
             }
 
             if (e.Button == MouseButtons.None)
+            {
                 Cursor = HitTestDraggableMarker(e.Location) == null ? Cursors.Default : Cursors.Hand;
+                UpdateHoverHint(e.Location);
+            }
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
+            ClearHoverHint();
             if (_dragPortal == null && _dragEntity == null)
                 Cursor = Cursors.Default;
         }
@@ -1743,6 +1750,66 @@ namespace MapEditorTool.UI
             return null;
         }
 
+        private void UpdateHoverHint(Point location)
+        {
+            if (_map == null)
+            {
+                ClearHoverHint();
+                return;
+            }
+
+            var portal = HitTestPortal(location);
+            if (portal != null)
+            {
+                var text = GetPortalHoverText == null ? FormatDefaultPortalHoverText(portal) : GetPortalHoverText(portal);
+                RaiseHoverHint(text, location);
+                return;
+            }
+
+            var entity = HitTestEntity(location);
+            if (entity != null)
+            {
+                var text = GetEntityHoverText == null ? FormatDefaultEntityHoverText(entity) : GetEntityHoverText(entity);
+                RaiseHoverHint(text, location);
+                return;
+            }
+
+            ClearHoverHint();
+        }
+
+        private void RaiseHoverHint(string text, Point location)
+        {
+            var handler = HoverHintRequested;
+            if (handler != null)
+                handler(this, new HoverHintRequestedEventArgs(text, location));
+        }
+
+        private void ClearHoverHint()
+        {
+            RaiseHoverHint(string.Empty, Point.Empty);
+        }
+
+        private static string FormatDefaultPortalHoverText(Portal portal)
+        {
+            var name = portal == null ? string.Empty : (portal.Name ?? string.Empty).Trim();
+            if (name.Length == 0 && portal != null)
+                name = (portal.Id ?? string.Empty).Trim();
+            return "Portal: " + (name.Length == 0 ? "Portal" : name);
+        }
+
+        private static string FormatDefaultEntityHoverText(PlacedEntity entity)
+        {
+            if (entity == null)
+                return "Entity";
+
+            var type = (entity.Type ?? string.Empty).Trim();
+            if (type.Length > 0)
+                return type;
+
+            var prefab = (entity.Prefab ?? string.Empty).Trim();
+            return prefab.Length == 0 ? "Entity" : Path.GetFileNameWithoutExtension(prefab);
+        }
+
         private PointF ScreenToWorld(Point point)
         {
             if (_map == null)
@@ -3060,6 +3127,18 @@ namespace MapEditorTool.UI
 
         public CollisionEditorTool Tool { get; private set; }
         public bool Accepted { get; set; }
+    }
+
+    internal sealed class HoverHintRequestedEventArgs : EventArgs
+    {
+        public HoverHintRequestedEventArgs(string text, Point location)
+        {
+            Text = text ?? string.Empty;
+            Location = location;
+        }
+
+        public string Text { get; private set; }
+        public Point Location { get; private set; }
     }
 
     internal sealed class TileCollisionCellHit

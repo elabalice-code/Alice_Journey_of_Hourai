@@ -55,6 +55,8 @@ namespace MapEditorTool.UI
         private CollisionLayoutTarget _currentCollisionOverlayTarget;
         private int _lastMapToolTipIndex;
         private int _lastLinkToolTipIndex;
+        private Control _lastHoverHintControl;
+        private string _lastHoverHintText;
         private bool _showCollisionOverlay;
         private bool _isDeveloperCommentBoxOpen;
         private bool _isApplyingSnapshot;
@@ -76,6 +78,7 @@ namespace MapEditorTool.UI
             };
             _lastMapToolTipIndex = -1;
             _lastLinkToolTipIndex = -1;
+            _lastHoverHintText = string.Empty;
 
             _developerCommentExecutor = new DeveloperCommentExecutor(AppDomain.CurrentDomain.BaseDirectory);
             _collisionLayoutExecutor = new CollisionLayoutExecutor();
@@ -357,6 +360,9 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.TileCollisionRemoveRequested += MapPreviewCanvasTileCollisionRemoveRequested;
             _mapPreviewCanvas.TileCollisionContextRequested += MapPreviewCanvasTileCollisionContextRequested;
             _mapPreviewCanvas.CollisionToolShortcutRequested += MapPreviewCanvasCollisionToolShortcutRequested;
+            _mapPreviewCanvas.GetPortalHoverText = BuildPortalHoverText;
+            _mapPreviewCanvas.GetEntityHoverText = BuildEntityHoverText;
+            _mapPreviewCanvas.HoverHintRequested += CanvasHoverHintRequested;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -368,6 +374,7 @@ namespace MapEditorTool.UI
             _linksPreviewCanvas.LinkSelected += LinksPreviewCanvasLinkSelected;
             _linksPreviewCanvas.PortalSelected += LinksPreviewCanvasPortalSelected;
             _linksPreviewCanvas.PortalTargetRequested += LinksPreviewCanvasPortalTargetRequested;
+            _linksPreviewCanvas.HoverHintRequested += CanvasHoverHintRequested;
             _linksPreviewCanvas.BringToFront();
         }
 
@@ -969,6 +976,29 @@ namespace MapEditorTool.UI
                 return;
 
             SetPortalLinkTarget(e.FromMapId, e.FromPortalId, e.TargetMapId, e.TargetPortalId);
+        }
+
+        private void CanvasHoverHintRequested(object sender, HoverHintRequestedEventArgs e)
+        {
+            var control = sender as Control;
+            if (control == null || e == null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(e.Text))
+            {
+                _toolTip.Hide(control);
+                _lastHoverHintControl = null;
+                _lastHoverHintText = string.Empty;
+                return;
+            }
+
+            if (ReferenceEquals(_lastHoverHintControl, control) &&
+                string.Equals(_lastHoverHintText, e.Text, StringComparison.Ordinal))
+                return;
+
+            _lastHoverHintControl = control;
+            _lastHoverHintText = e.Text;
+            _toolTip.Show(e.Text, control, e.Location.X + 18, e.Location.Y + 18, 6000);
         }
 
         private MapLink FindOrCreateLinkForPortal(string fromMapId, string fromPortalId)
@@ -2417,6 +2447,28 @@ namespace MapEditorTool.UI
             return (portal.NodePath ?? string.Empty).Trim();
         }
 
+        private string BuildPortalHoverText(Portal portal)
+        {
+            if (portal == null)
+                return string.Empty;
+
+            var lines = new List<string> { "Portal: " + FormatPortalName(portal) };
+            var targetMapId = (portal.TargetMapId ?? string.Empty).Trim();
+            if (targetMapId.Length > 0)
+            {
+                var target = FindMapById(targetMapId);
+                var targetName = target == null
+                    ? targetMapId
+                    : string.IsNullOrWhiteSpace(target.DisplayName)
+                        ? NormalizeMapId(target)
+                        : target.DisplayName;
+                var targetPortal = (portal.TargetPortalId ?? string.Empty).Trim();
+                lines.Add("Target: " + targetName + (targetPortal.Length == 0 ? string.Empty : " / " + targetPortal));
+            }
+
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
         private static string FormatEntityName(PlacedEntity entity)
         {
             if (entity == null)
@@ -2432,6 +2484,19 @@ namespace MapEditorTool.UI
 
             var nodePath = (entity.NodePath ?? string.Empty).Trim();
             return nodePath.Length == 0 ? "Entity" : nodePath;
+        }
+
+        private static string BuildEntityHoverText(PlacedEntity entity)
+        {
+            if (entity == null)
+                return string.Empty;
+
+            var lines = new List<string> { "Entity: " + FormatEntityName(entity) };
+            var prefab = (entity.Prefab ?? string.Empty).Trim();
+            if (prefab.Length > 0)
+                lines.Add(prefab);
+
+            return string.Join(Environment.NewLine, lines.ToArray());
         }
 
         private static string ResolveGodotResourcePath(string godotRoot, string resourcePath)
