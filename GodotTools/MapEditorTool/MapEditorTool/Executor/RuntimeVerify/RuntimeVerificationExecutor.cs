@@ -237,6 +237,7 @@ namespace MapEditorTool.Executor.RuntimeVerify
                 text => text.Contains("RunStatus")
                     && text.Contains("RunPortalReview")
                     && text.Contains("RunRuntimeVerify")
+                    && text.Contains("RunUxAudit")
                     && text.Contains("RunImport")
                     && text.Contains("RunValidate")
                     && text.Contains("RunPatchPosition")
@@ -304,6 +305,12 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PortalAnimationExecutor")
                     && text.Contains("FormatPortalAnimationSummary"),
                 "MapEditorTool restores the portalanim CLI extractor through PortalAnimationExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-cli-ux-audit", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
+                text => text.Contains("case \"ux-audit\"")
+                    && text.Contains("RunUxAudit")
+                    && text.Contains("BuildUxAudit")
+                    && text.Contains("FormatUxAuditSummary"),
+                "MapEditorTool restores the ux-audit CLI mirror through MapReportExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-loads-saves-collision-layout-json", "GodotTools/MapEditorTool/MapEditorTool/Executor/CollisionLayout/CollisionLayoutExecutor.cs",
                 text => text.Contains("LoadLayout")
                     && text.Contains("SaveLayout")

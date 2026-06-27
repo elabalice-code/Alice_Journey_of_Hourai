@@ -148,6 +148,112 @@ namespace MapEditorTool.Executor.MapReport
             return BuildValidationReport(godotRoot, inputPath ?? string.Empty, loadedProject, scanned);
         }
 
+        public MapUxAuditReport BuildUxAudit(string godotRoot)
+        {
+            godotRoot = Path.GetFullPath(godotRoot);
+            var formPath = Path.Combine(godotRoot, "GodotTools", "MapEditorTool", "MapEditorTool", "UI", "Form1.cs");
+            var cliPath = Path.Combine(godotRoot, "GodotTools", "MapEditorTool", "MapEditorTool", "Cli", "CliEntry.cs");
+            var runtimeVerifyPath = Path.Combine(godotRoot, "GodotTools", "MapEditorTool", "MapEditorTool", "Executor", "RuntimeVerify", "RuntimeVerificationExecutor.cs");
+            var formText = TryReadText(formPath);
+            var cliText = TryReadText(cliPath);
+            var runtimeVerifyText = TryReadText(runtimeVerifyPath);
+
+            var checks = new List<MapUxAuditCheck>();
+            AddUxCheck(checks, "discoverability", "main-window-shell",
+                HasText(formText, "Text = \"MapEditorTool") &&
+                    HasText(formText, "StartPosition = FormStartPosition.CenterScreen"),
+                "Main window declares an explicit MapEditorTool title and centered startup position.", "UI/Form1.cs");
+            AddUxCheck(checks, "discoverability", "project-file-actions",
+                HasText(formText, "NewProject()") &&
+                    HasText(formText, "OpenProject()") &&
+                    HasText(formText, "SaveProject()") &&
+                    HasText(formText, "SaveProjectAs()") &&
+                    HasText(formText, "Keys.Control | Keys.N") &&
+                    HasText(formText, "Keys.Control | Keys.O") &&
+                    HasText(formText, "Keys.Control | Keys.S"),
+                "UI exposes new/open/save/save-as project actions with shortcuts.", "UI/Form1.cs");
+            AddUxCheck(checks, "discoverability", "map-godot-actions",
+                HasText(formText, "ImportFromGodot") &&
+                    HasText(formText, "ApplySelectedMapToGodot") &&
+                    HasText(formText, "Runtime Verification Report"),
+                "UI exposes import, apply, and runtime verification actions.", "UI/Form1.cs");
+            AddUxCheck(checks, "discoverability", "context-actions",
+                HasText(formText, "mapListContextMenu") &&
+                    HasText(formText, "linkListContextMenu") &&
+                    HasText(formText, "Add Portal Here"),
+                "UI exposes map/link context menus and portal context actions.", "UI/Form1.cs");
+            AddUxCheck(checks, "discoverability", "resource-browse",
+                HasText(formText, "HookResourceBrowse") &&
+                    HasText(formText, "BrowseAndAssignResourcePath") &&
+                    HasText(formText, "ResourcePathExecutor"),
+                "Property grid resource browsing is discoverable and delegated to ResourcePathExecutor.", "UI/Form1.cs");
+            AddUxCheck(checks, "feedback", "status-text",
+                HasText(formText, "statusText.Text") &&
+                    HasText(formText, "_viewModel.SetStatusText"),
+                "UI writes operation feedback through status text and ViewModel status state.", "UI/Form1.cs");
+            AddUxCheck(checks, "feedback", "error-dialogs",
+                HasText(formText, "MessageBoxIcon.Error") &&
+                    HasText(formText, "MessageBox.Show"),
+                "UI shows modal error dialogs for failed import/write/report operations.", "UI/Form1.cs");
+            AddUxCheck(checks, "feedback", "warning-dialogs",
+                HasText(formText, "MessageBoxIcon.Warning"),
+                "UI shows warnings for invalid or destructive operations.", "UI/Form1.cs");
+            AddUxCheck(checks, "feedback", "hover-tooltips",
+                HasText(formText, "ToolTip") &&
+                    HasText(formText, "HoverHintRequested") &&
+                    HasText(formText, "ShowPropertyGridToolTip"),
+                "UI provides hover and PropertyGrid tooltips.", "UI/Form1.cs");
+            AddUxCheck(checks, "recovery", "undo-redo",
+                HasText(formText, "UndoLastAction") &&
+                    HasText(formText, "RedoLastAction") &&
+                    HasText(formText, "Keys.Control | Keys.Z") &&
+                    HasText(formText, "Keys.Control | Keys.Y"),
+                "UI supports undo/redo through menu and global shortcuts.", "UI/Form1.cs");
+            AddUxCheck(checks, "recovery", "destructive-confirmation",
+                HasText(formText, "DeleteSelectedMap") &&
+                    HasText(formText, "MessageBoxButtons.OKCancel"),
+                "UI asks for confirmation before destructive map deletion.", "UI/Form1.cs");
+            AddUxCheck(checks, "developer-feedback", "developer-comment-mode",
+                HasText(formText, "DeveloperCommentBox") &&
+                    HasText(formText, "developerCommentModeCheckBox") &&
+                    HasText(formText, "DeveloperCommentExecutor"),
+                "Developer comment mode is available as a controlled feedback channel.", "UI/Form1.cs");
+            AddUxCheck(checks, "agent-mirror", "cli-summary-commands",
+                HasText(cliText, "status --godotRoot") &&
+                    HasText(cliText, "runtime-verify") &&
+                    HasText(cliText, "import --godotRoot") &&
+                    HasText(cliText, "validate --godotRoot"),
+                "CLI mirrors key map status, verification, import, and validation workflows.", "Cli/CliEntry.cs");
+            AddUxCheck(checks, "agent-mirror", "cli-utility-commands",
+                HasText(cliText, "tracealpha") &&
+                    HasText(cliText, "portalanim"),
+                "CLI mirrors legacy diagnostic utilities for alpha tracing and portal animation extraction.", "Cli/CliEntry.cs");
+            AddUxCheck(checks, "agent-mirror", "runtime-verifier-covers-ux-audit",
+                HasText(runtimeVerifyText, "mapeditortool-cli-ux-audit"),
+                "Runtime verifier tracks the ux-audit CLI surface.", "Executor/RuntimeVerify/RuntimeVerificationExecutor.cs", "warning");
+
+            AddUxCheck(checks, "readability", "no-garbled-text-markers",
+                CountSuspiciousMojibake(formText + cliText) == 0,
+                "No obvious garbled text markers were detected in active MapEditorTool UI/CLI source.", "UI/Form1.cs; Cli/CliEntry.cs", "warning");
+
+            var blocking = checks.Count(x => string.Equals(x.Severity, "error", StringComparison.OrdinalIgnoreCase) && !x.Passed);
+            var warnings = checks.Count(x => string.Equals(x.Severity, "warning", StringComparison.OrdinalIgnoreCase) && !x.Passed);
+            return new MapUxAuditReport
+            {
+                ProjectRoot = godotRoot,
+                GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                AuditKind = "static-mapeditor-tool-ux",
+                Scope = "Static UX audit for MapEditorTool UI, CLI mirror commands, feedback, recovery, and developer-comment surfaces. It does not replace a human click-through.",
+                CheckCount = checks.Count,
+                PassedCount = checks.Count(x => x.Passed),
+                WarningCount = warnings,
+                BlockingIssueCount = blocking,
+                Ok = blocking == 0,
+                Checks = checks,
+                Recommendations = BuildUxRecommendations(checks)
+            };
+        }
+
         public string FormatStatusSummary(MapEditorStatus status)
         {
             var lines = new List<string>
@@ -227,6 +333,37 @@ namespace MapEditorTool.Executor.MapReport
             return string.Join(Environment.NewLine, lines.ToArray());
         }
 
+        public string FormatUxAuditSummary(MapUxAuditReport report)
+        {
+            var lines = new List<string>
+            {
+                "MapEditorTool UX audit",
+                "Project: " + report.ProjectRoot,
+                "Generated UTC: " + report.GeneratedAtUtc,
+                "Kind: " + report.AuditKind,
+                "Overall: " + (report.Ok ? "OK" : "FAILED") +
+                    " blocking=" + report.BlockingIssueCount +
+                    " warnings=" + report.WarningCount,
+                "Counts: checks=" + report.CheckCount + " passed=" + report.PassedCount,
+                "Scope: " + report.Scope,
+                "Checks:"
+            };
+
+            foreach (var check in report.Checks)
+            {
+                lines.Add("  " + (check.Passed ? "OK" : check.Severity.ToUpperInvariant()) +
+                    " [" + check.Category + "] " + check.Id + " - " + check.Detail);
+            }
+
+            lines.Add("Recommendations:");
+            if (report.Recommendations.Count == 0)
+                lines.Add("  none");
+            foreach (var recommendation in report.Recommendations)
+                lines.Add("  " + recommendation);
+
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
         private static MapValidationReport BuildValidationReport(
             string godotRoot,
             string inputPath,
@@ -261,6 +398,52 @@ namespace MapEditorTool.Executor.MapReport
                 ExtraInGodot = extra.Take(50).ToList(),
                 Ok = missing.Count == 0 && extra.Count == 0
             };
+        }
+
+        private static void AddUxCheck(
+            List<MapUxAuditCheck> checks,
+            string category,
+            string id,
+            bool passed,
+            string detail,
+            string evidence,
+            string severity = "error")
+        {
+            checks.Add(new MapUxAuditCheck
+            {
+                Category = category,
+                Id = id,
+                Severity = severity,
+                Passed = passed,
+                Evidence = evidence,
+                Detail = detail
+            });
+        }
+
+        private static int CountSuspiciousMojibake(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return 0;
+
+            return text.Count(ch => ch == '\uFFFD');
+        }
+
+        private static bool HasText(string text, string value)
+        {
+            return (text ?? string.Empty).IndexOf(value, StringComparison.Ordinal) >= 0;
+        }
+
+        private static List<string> BuildUxRecommendations(List<MapUxAuditCheck> checks)
+        {
+            var recommendations = new List<string>();
+            if (checks.Any(x => string.Equals(x.Category, "feedback", StringComparison.OrdinalIgnoreCase) && !x.Passed))
+                recommendations.Add("Add visible status text or dialogs for any save/apply/validation operation that lacks feedback.");
+            if (checks.Any(x => string.Equals(x.Category, "recovery", StringComparison.OrdinalIgnoreCase) && !x.Passed))
+                recommendations.Add("Add undo, confirmation, or recovery affordances before approving more mutating workflows.");
+            if (checks.Any(x => string.Equals(x.Id, "no-garbled-text-markers", StringComparison.OrdinalIgnoreCase) && !x.Passed))
+                recommendations.Add("Repair garbled UI or CLI text and prefer English comments/diagnostic strings in active MapEditorTool code.");
+            recommendations.Add("Run a human click-through review for import, edit, save/apply, validation, and recovery flows; this static audit is only the agent mirror.");
+            return recommendations.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         private static List<MapDefinition> GetMapScenes(MapProject project)

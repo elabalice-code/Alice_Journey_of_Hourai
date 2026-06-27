@@ -35,6 +35,8 @@ namespace MapEditorTool.Cli
                         return RunPortalReview(opts);
                     case "runtime-verify":
                         return RunRuntimeVerify(opts);
+                    case "ux-audit":
+                        return RunUxAudit(opts);
                     case "import":
                         return RunImport(opts);
                     case "validate":
@@ -69,6 +71,7 @@ namespace MapEditorTool.Cli
             Console.WriteLine("  MapEditorTool.exe status --godotRoot <dir> [--summary]");
             Console.WriteLine("  MapEditorTool.exe portal-review --godotRoot <dir> [--summary]");
             Console.WriteLine("  MapEditorTool.exe runtime-verify --godotRoot <dir> [--summary]");
+            Console.WriteLine("  MapEditorTool.exe ux-audit --godotRoot <dir> [--summary]");
             Console.WriteLine("  MapEditorTool.exe import --godotRoot <dir> --out <file> [--summary]");
             Console.WriteLine("  MapEditorTool.exe validate --godotRoot <dir> --in <file> [--summary]");
             Console.WriteLine("  MapEditorTool.exe patchpos --godotRoot <dir> --scene <res://...> --nodePath <path> --x <num> --y <num>");
@@ -135,6 +138,19 @@ namespace MapEditorTool.Cli
             var report = executor.BuildRuntimeVerificationReport(godotRoot);
             if (opts.ContainsKey("summary"))
                 Console.WriteLine(executor.FormatRuntimeVerificationSummary(report));
+            else
+                WriteJson(report);
+
+            return report.Ok ? 0 : 1;
+        }
+
+        private static int RunUxAudit(Dictionary<string, string> opts)
+        {
+            var godotRoot = ResolveGodotRoot(opts, true);
+            var executor = new MapReportExecutor();
+            var report = executor.BuildUxAudit(godotRoot);
+            if (opts.ContainsKey("summary"))
+                Console.WriteLine(executor.FormatUxAuditSummary(report));
             else
                 WriteJson(report);
 

@@ -106,4 +106,48 @@ namespace MapEditorTool.Executor.MapReport
         public List<string> MissingInGodot { get; set; }
         public List<string> ExtraInGodot { get; set; }
     }
+
+    public sealed class MapUxAuditReport
+    {
+        public MapUxAuditReport()
+        {
+            ProjectRoot = string.Empty;
+            GeneratedAtUtc = string.Empty;
+            AuditKind = string.Empty;
+            Scope = string.Empty;
+            Checks = new List<MapUxAuditCheck>();
+            Recommendations = new List<string>();
+        }
+
+        public string ProjectRoot { get; set; }
+        public string GeneratedAtUtc { get; set; }
+        public string AuditKind { get; set; }
+        public string Scope { get; set; }
+        public int CheckCount { get; set; }
+        public int PassedCount { get; set; }
+        public int WarningCount { get; set; }
+        public int BlockingIssueCount { get; set; }
+        public bool Ok { get; set; }
+        public List<MapUxAuditCheck> Checks { get; set; }
+        public List<string> Recommendations { get; set; }
+    }
+
+    public sealed class MapUxAuditCheck
+    {
+        public MapUxAuditCheck()
+        {
+            Category = string.Empty;
+            Id = string.Empty;
+            Severity = string.Empty;
+            Evidence = string.Empty;
+            Detail = string.Empty;
+        }
+
+        public string Category { get; set; }
+        public string Id { get; set; }
+        public string Severity { get; set; }
+        public bool Passed { get; set; }
+        public string Evidence { get; set; }
+        public string Detail { get; set; }
+    }
 }
