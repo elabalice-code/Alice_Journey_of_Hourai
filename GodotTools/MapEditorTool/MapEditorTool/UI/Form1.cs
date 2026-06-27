@@ -308,6 +308,7 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.TileCollisionEditCommitted += MapPreviewCanvasTileCollisionEditCommitted;
             _mapPreviewCanvas.TileCollisionAddBoxRequested += MapPreviewCanvasTileCollisionAddBoxRequested;
             _mapPreviewCanvas.TileCollisionRemoveRequested += MapPreviewCanvasTileCollisionRemoveRequested;
+            _mapPreviewCanvas.TileCollisionContextRequested += MapPreviewCanvasTileCollisionContextRequested;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -651,6 +652,78 @@ namespace MapEditorTool.UI
             finally
             {
                 statusText.Text = _viewModel.Snapshot.StatusText;
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void MapPreviewCanvasTileCollisionContextRequested(object sender, TileCollisionContextRequestedEventArgs e)
+        {
+            if (e == null || e.Selection == null)
+                return;
+
+            var canvas = sender as Control;
+            var menu = new ContextMenuStrip();
+            menu.Closed += delegate { menu.Dispose(); };
+
+            var setOneWay = new ToolStripMenuItem("Set One-Way") { Checked = e.Selection.OneWay };
+            setOneWay.Click += delegate { SetTileCollisionOneWay(e.Selection, true); };
+            menu.Items.Add(setOneWay);
+
+            var setSolid = new ToolStripMenuItem("Set Solid") { Checked = !e.Selection.OneWay };
+            setSolid.Click += delegate { SetTileCollisionOneWay(e.Selection, false); };
+            menu.Items.Add(setSolid);
+
+            if (canvas == null)
+                menu.Show(this, PointToClient(Cursor.Position));
+            else
+                menu.Show(canvas, e.Location);
+        }
+
+        private void SetTileCollisionOneWay(TileCollisionSelection selection, bool oneWay)
+        {
+            if (selection == null)
+                return;
+
+            var selectedMap = RequireSelectedMapForTileCollisionEvent(oneWay ? "set one-way" : "set solid");
+            if (selectedMap == null)
+                return;
+            if (selection.OneWay == oneWay)
+            {
+                _viewModel.SetStatusText("Tile collision already " + (oneWay ? "one-way." : "solid."));
+                ApplySnapshotToUi();
+                return;
+            }
+
+            try
+            {
+                var commit = new TileCollisionCommit
+                {
+                    TileSetResPath = selection.TileSetResPath,
+                    LayerNodePath = selection.LayerNodePath,
+                    SourceId = selection.SourceId,
+                    AtlasX = selection.AtlasX,
+                    AtlasY = selection.AtlasY,
+                    CellX = selection.CellX,
+                    CellY = selection.CellY,
+                    OneWay = oneWay,
+                    FromPoints = CloneGodotVectorPoints(selection.Points),
+                    ToPoints = CloneGodotVectorPoints(selection.Points)
+                };
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, new List<TileCollisionCommit> { commit });
+                _mapPreviewCanvas.EvictTileSetCacheForResPath(selection.TileSetResPath);
+                _mapPreviewCanvas.ClearTileCollisionSelection();
+                _viewModel.MarkSelectedMapEdited("Tile collision");
+                _viewModel.SetStatusText("Tile collision set " + (oneWay ? "one-way: " : "solid: ") + result.Summary);
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Set tile collision mode failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Set tile collision mode failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
                 ApplySnapshotToUi();
             }
         }

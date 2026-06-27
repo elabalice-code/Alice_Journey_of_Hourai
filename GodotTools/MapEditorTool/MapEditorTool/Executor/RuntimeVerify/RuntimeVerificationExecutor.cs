@@ -349,6 +349,11 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("CreateDefaultTileCollisionSquare")
                     && text.Contains("TileCollisionCellHit"),
                 "MapEditorTool map preview can request Add Box and Remove Collision actions for TileSet collision cells.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-tileset-collision-context", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("TileCollisionContextRequested")
+                    && text.Contains("RequestTileCollisionContext")
+                    && text.Contains("TileCollisionContextRequestedEventArgs"),
+                "MapEditorTool map preview can request TileSet collision context actions from right-click selection.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-tileset-collision-selection", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("MapPreviewCanvasTileCollisionSelected")
                     && text.Contains("TileCollisionSelected")
@@ -373,6 +378,14 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("Tile collision box added")
                     && text.Contains("Tile collision removed"),
                 "MapEditorTool UI routes TileSet Add Box and Remove Collision requests through TileCollisionExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-commits-tileset-collision-one-way", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasTileCollisionContextRequested")
+                    && text.Contains("SetTileCollisionOneWay")
+                    && text.Contains("Set One-Way")
+                    && text.Contains("Set Solid")
+                    && text.Contains("ApplyTileCollisionEdits")
+                    && text.Contains("Tile collision set"),
+                "MapEditorTool UI routes TileSet collision one-way/solid context actions through TileCollisionExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-collision-paint", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("CollisionLayoutEdited")
                     && text.Contains("ApplyCollisionPaintAt")

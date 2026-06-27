@@ -58,6 +58,7 @@ namespace MapEditorTool.UI
         public event EventHandler<TileCollisionEditCommittedEventArgs> TileCollisionEditCommitted;
         public event EventHandler<TileCollisionAddBoxRequestedEventArgs> TileCollisionAddBoxRequested;
         public event EventHandler<TileCollisionRemoveRequestedEventArgs> TileCollisionRemoveRequested;
+        public event EventHandler<TileCollisionContextRequestedEventArgs> TileCollisionContextRequested;
 
         public MapPreviewCanvas()
         {
@@ -166,6 +167,12 @@ namespace MapEditorTool.UI
 
             if (_map == null)
                 return;
+
+            if (CanSelectTileCollision() && e.Button == MouseButtons.Right)
+            {
+                if (RequestTileCollisionContext(e.Location))
+                    return;
+            }
 
             if (CanSelectTileCollision() && e.Button == MouseButtons.Left)
             {
@@ -445,6 +452,19 @@ namespace MapEditorTool.UI
             }
 
             SetTileCollisionSelection(selection);
+            return true;
+        }
+
+        private bool RequestTileCollisionContext(Point location)
+        {
+            TileCollisionSelection selection;
+            if (!HitTestTileCollisionPolygon(location, out selection))
+                return false;
+
+            SetTileCollisionSelection(selection);
+            var handler = TileCollisionContextRequested;
+            if (handler != null)
+                handler(this, new TileCollisionContextRequestedEventArgs(selection, location));
             return true;
         }
 
@@ -2193,6 +2213,18 @@ namespace MapEditorTool.UI
 
         public TileCollisionCellHit Cell { get; private set; }
         public bool Accepted { get; set; }
+    }
+
+    internal sealed class TileCollisionContextRequestedEventArgs : EventArgs
+    {
+        public TileCollisionContextRequestedEventArgs(TileCollisionSelection selection, Point location)
+        {
+            Selection = selection;
+            Location = location;
+        }
+
+        public TileCollisionSelection Selection { get; private set; }
+        public Point Location { get; private set; }
     }
 
     internal sealed class TileCollisionCellHit
