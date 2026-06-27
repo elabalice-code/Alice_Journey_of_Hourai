@@ -541,6 +541,21 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("SelectLink(MapLink link)")
                     && text.Contains("ReferenceEquals(item, link)"),
                 "MapEditorTool ViewModel exposes pure selection methods for links preview navigation.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-manual-link-editing", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("context.links.add")
+                    && text.Contains("context.links.delete")
+                    && text.Contains("AddLink")
+                    && text.Contains("DeleteSelectedLink")
+                    && text.Contains("NormalizeMapId(fromMap)")
+                    && text.Contains("RemoveSelectedLink"),
+                "MapEditorTool UI can manually add and delete project links from the links list context menu.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-manual-link-editing", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("AddLink(MapLink link)")
+                    && text.Contains("RemoveSelectedLink")
+                    && text.Contains("Added link")
+                    && text.Contains("Deleted link")
+                    && text.Contains("ProjectDirty"),
+                "MapEditorTool ViewModel owns pure project link add/remove state updates.");
             AddTextCheck(checks, godotRoot, "mapeditortool-project-file-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ProjectFile/ProjectFileExecutor.cs",
                 text => text.Contains("LoadProject") && text.Contains("SaveProject"),
                 "MapEditorTool project file executor can load and save MapProject JSON.");

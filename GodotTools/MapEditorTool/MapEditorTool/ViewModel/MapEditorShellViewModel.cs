@@ -233,6 +233,42 @@ namespace MapEditorTool.ViewModel
                 SelectLinkByIndex(index);
         }
 
+        public void AddLink(MapLink link)
+        {
+            if (link == null)
+                return;
+
+            if (_currentProject == null)
+                _currentProject = new MapProject();
+            if (_currentProject.Links == null)
+                _currentProject.Links = new List<MapLink>();
+
+            _currentProject.Links.Add(link);
+            _snapshot.SelectedLinkIndex = _currentProject.Links.Count - 1;
+            RefreshProjectSnapshot();
+            _snapshot.ProjectDirty = true;
+            _snapshot.StatusText = "Added link: " + link.DisplayName;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void RemoveSelectedLink()
+        {
+            var selected = SelectedLink;
+            if (selected == null || _currentProject == null || _currentProject.Links == null)
+                return;
+
+            _currentProject.Links.Remove(selected);
+            if (_snapshot.SelectedLinkIndex >= _currentProject.Links.Count)
+                _snapshot.SelectedLinkIndex = _currentProject.Links.Count - 1;
+            if (_currentProject.Links.Count == 0)
+                _snapshot.SelectedLinkIndex = -1;
+
+            RefreshProjectSnapshot();
+            _snapshot.ProjectDirty = true;
+            _snapshot.StatusText = "Deleted link: " + selected.DisplayName;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
         public void MarkSelectedMapEdited(string propertyName)
         {
             RefreshProjectSnapshot();

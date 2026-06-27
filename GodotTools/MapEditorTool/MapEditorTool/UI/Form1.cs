@@ -91,6 +91,7 @@ namespace MapEditorTool.UI
             WireDeveloperInteractionHandlers(mainMenu);
             WireDeveloperInteractionHandlers(mapTools);
             WireDeveloperInteractionHandlers(mapListContextMenu);
+            WireDeveloperInteractionHandlers(linkListContextMenu);
 
             ApplySnapshotToUi();
         }
@@ -297,6 +298,13 @@ namespace MapEditorTool.UI
             });
 
             mapsList.ContextMenuStrip = mapListContextMenu;
+            linkListContextMenu.Items.AddRange(new ToolStripItem[]
+            {
+                CreateMenuItem("Add Link", "context.links.add"),
+                CreateMenuItem("Delete Link", "context.links.delete")
+            });
+
+            linksList.ContextMenuStrip = linkListContextMenu;
             mapsList.SelectedIndexChanged += MapsListSelectedIndexChanged;
             linksList.SelectedIndexChanged += LinksListSelectedIndexChanged;
         }
@@ -1097,6 +1105,8 @@ namespace MapEditorTool.UI
             SetToolStripItemText(mapListContextMenu, "context.maps.add", "Add Map");
             SetToolStripItemText(mapListContextMenu, "context.maps.delete", "Delete Map");
             SetToolStripItemText(mapListContextMenu, "context.maps.pin", "Pin Map");
+            SetToolStripItemText(linkListContextMenu, "context.links.add", "Add Link");
+            SetToolStripItemText(linkListContextMenu, "context.links.delete", "Delete Link");
         }
 
         private static void SetToolStripComboItems(ToolStrip toolStrip, string itemName, object[] items, int selectedIndex)
@@ -1334,6 +1344,14 @@ namespace MapEditorTool.UI
             {
                 PinSelectedMapAsStartingMap();
             }
+            else if (string.Equals(item.Name, "context.links.add", StringComparison.Ordinal))
+            {
+                AddLink();
+            }
+            else if (string.Equals(item.Name, "context.links.delete", StringComparison.Ordinal))
+            {
+                DeleteSelectedLink();
+            }
             else if (string.Equals(item.Name, "tool.collisionInitialize", StringComparison.Ordinal))
             {
                 InitializeSelectedMapCollision();
@@ -1472,6 +1490,64 @@ namespace MapEditorTool.UI
             {
                 ApplySnapshotToUi();
             }
+        }
+
+        private void AddLink()
+        {
+            try
+            {
+                var project = _viewModel.CurrentProject;
+                if (project == null || project.Maps == null || project.Maps.Count == 0)
+                {
+                    _viewModel.SetStatusText("Add link skipped: no maps are available.");
+                    MessageBox.Show(this, "Create or import at least one map first.", "Add Link", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var fromMap = _viewModel.SelectedMap ?? project.Maps[0];
+                var toMap = project.Maps.FirstOrDefault(candidate => !ReferenceEquals(candidate, fromMap)) ?? fromMap;
+                var link = new MapLink
+                {
+                    From = new LinkEndpoint { MapId = NormalizeMapId(fromMap), PortalId = string.Empty },
+                    To = new LinkEndpoint { MapId = NormalizeMapId(toMap), PortalId = string.Empty }
+                };
+
+                _viewModel.AddLink(link);
+                tabs.SelectedTab = linksTab;
+                _viewModel.SetStatusText("Added link: " + link.DisplayName);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void DeleteSelectedLink()
+        {
+            var selected = _viewModel.SelectedLink;
+            if (selected == null)
+            {
+                _viewModel.SetStatusText("Delete link skipped: no link is selected.");
+                MessageBox.Show(this, "Select a link first.", "Delete Link", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ApplySnapshotToUi();
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                this,
+                "Delete selected link from the project?\r\n\r\n" + selected.DisplayName,
+                "Delete Link",
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Warning);
+            if (confirm != DialogResult.OK)
+            {
+                ApplySnapshotToUi();
+                return;
+            }
+
+            _viewModel.RemoveSelectedLink();
+            tabs.SelectedTab = linksTab;
+            ApplySnapshotToUi();
         }
 
         private void PinSelectedMapAsStartingMap()
