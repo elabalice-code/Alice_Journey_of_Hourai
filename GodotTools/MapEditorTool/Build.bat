@@ -11,6 +11,7 @@ set "SOLUTION_DIR=%~dp0"
 set "SOLUTION_FILE=%SOLUTION_DIR%MapEditorTool.sln"
 set "OUTPUT_DIR=%SOLUTION_DIR%MapEditorTool\bin\Release"
 set "PACKAGE_DIR=%SOLUTION_DIR%ReleasePackage"
+set "LEGACY_MAPEDITOR_DIR=%SOLUTION_DIR%..\MapEditor"
 
 REM Try MSBuild paths in order: VS2022 Community (64-bit preferred), then BuildTools
 set "MSBUILD="
@@ -67,6 +68,16 @@ if exist "!OUTPUT_DIR!\*" (
     echo        Copied build output to ReleasePackage.
 ) else (
     echo [WARNING] No build output found at !OUTPUT_DIR!
+)
+
+REM Copy bundled video tools from the legacy MapEditor until MapEditorTool owns its own tool drop.
+for %%F in (ffmpeg.exe ffprobe.exe ffplay.exe) do (
+    if exist "!LEGACY_MAPEDITOR_DIR!\%%F" (
+        copy /y "!LEGACY_MAPEDITOR_DIR!\%%F" "!PACKAGE_DIR!\%%F" >nul
+        echo        Copied: %%F
+    ) else (
+        echo [WARNING] Missing bundled video tool: %%F
+    )
 )
 
 echo.

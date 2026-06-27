@@ -387,6 +387,18 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PortalAnimationExecutor")
                     && text.Contains("FormatPortalAnimationSummary"),
                 "MapEditorTool restores the portalanim CLI extractor through PortalAnimationExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-portalanim-resolves-bundled-tools", "GodotTools/MapEditorTool/MapEditorTool/Executor/PortalAnimation/PortalAnimationExecutor.cs",
+                text => text.Contains("ResolveBundledToolPath")
+                    && text.Contains("AppDomain.CurrentDomain.BaseDirectory")
+                    && text.Contains("GodotTools\", \"MapEditorTool\"")
+                    && text.Contains("ReleasePackage")
+                    && text.Contains("GodotTools\", \"MapEditor\""),
+                "MapEditorTool portal animation resolves bundled video tools from MapEditorTool first, with legacy MapEditor as a compatibility fallback.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-build-packages-video-tools", "GodotTools/MapEditorTool/Build.bat",
+                text => text.Contains("LEGACY_MAPEDITOR_DIR")
+                    && text.Contains("ffmpeg.exe ffprobe.exe ffplay.exe")
+                    && text.Contains("Copied: %%F"),
+                "MapEditorTool build packages ffmpeg, ffprobe, and ffplay into ReleasePackage for independent portal animation execution.");
             AddTextCheck(checks, godotRoot, "mapeditortool-cli-ux-audit", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
                 text => text.Contains("case \"ux-audit\"")
                     && text.Contains("RunUxAudit")

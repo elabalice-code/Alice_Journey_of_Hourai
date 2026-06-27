@@ -481,9 +481,10 @@ namespace MapEditorTool.Executor.PortalAnimation
             godotRoot = ValidateGodotRoot(godotRoot);
             var candidates = new List<string>
             {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName),
                 Path.Combine(godotRoot, "GodotTools", "MapEditorTool", fileName),
-                Path.Combine(godotRoot, "GodotTools", "MapEditor", fileName),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, fileName)
+                Path.Combine(godotRoot, "GodotTools", "MapEditorTool", "ReleasePackage", fileName),
+                Path.Combine(godotRoot, "GodotTools", "MapEditor", fileName)
             };
 
             foreach (var candidate in candidates)
