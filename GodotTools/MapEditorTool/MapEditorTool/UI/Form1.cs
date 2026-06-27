@@ -45,6 +45,7 @@ namespace MapEditorTool.UI
         private readonly RuntimeVerificationExecutor _runtimeVerificationExecutor;
         private readonly ScenePatchExecutor _scenePatchExecutor;
         private readonly TileCollisionExecutor _tileCollisionExecutor;
+        private readonly TileCollisionSnapshotExecutor _tileCollisionSnapshotExecutor;
         private readonly UndoManager _undoManager;
         private readonly MapEditorShellViewModel _viewModel;
         private readonly MapPreviewCanvas _mapPreviewCanvas;
@@ -81,6 +82,7 @@ namespace MapEditorTool.UI
             _resourcePathExecutor = new ResourcePathExecutor();
             _runtimeVerificationExecutor = new RuntimeVerificationExecutor(_mapImportExecutor);
             _tileCollisionExecutor = new TileCollisionExecutor();
+            _tileCollisionSnapshotExecutor = new TileCollisionSnapshotExecutor();
 
             BuildMapEditorShell();
             RegisterPropertyGridEditors();
@@ -622,7 +624,19 @@ namespace MapEditorTool.UI
                     return;
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var beforeFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, evictedTileSets);
+                var beforeAlternatives = CaptureTileCollisionAlternatives(selectedMap, commits);
                 var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, commits);
+                var afterFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, evictedTileSets);
+                var afterAlternatives = CaptureTileCollisionAlternatives(selectedMap, commits);
+                PushTileCollisionUndo(
+                    commits.Count == 1 ? "Tile collision edit" : "Tile collision group edit",
+                    selectedMap,
+                    beforeFiles,
+                    afterFiles,
+                    beforeAlternatives,
+                    afterAlternatives,
+                    evictedTileSets);
                 foreach (var tileSetResPath in evictedTileSets)
                     _mapPreviewCanvas.EvictTileSetCacheForResPath(tileSetResPath);
                 _mapPreviewCanvas.ClearTileCollisionSelection();
@@ -671,7 +685,20 @@ namespace MapEditorTool.UI
                 };
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var affectedTileSets = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cell.TileSetResPath };
+                var beforeFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, affectedTileSets);
+                var beforeAlternatives = CaptureTileCollisionAlternatives(selectedMap, new List<TileCollisionCommit> { commit });
                 var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, new List<TileCollisionCommit> { commit });
+                var afterFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, affectedTileSets);
+                var afterAlternatives = CaptureTileCollisionAlternatives(selectedMap, new List<TileCollisionCommit> { commit });
+                PushTileCollisionUndo(
+                    "Add tile collision box",
+                    selectedMap,
+                    beforeFiles,
+                    afterFiles,
+                    beforeAlternatives,
+                    afterAlternatives,
+                    affectedTileSets);
                 _mapPreviewCanvas.EvictTileSetCacheForResPath(cell.TileSetResPath);
                 _mapPreviewCanvas.ClearTileCollisionSelection();
                 e.Accepted = true;
@@ -713,7 +740,21 @@ namespace MapEditorTool.UI
                 };
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var affectedTileSets = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { cell.TileSetResPath };
+                var alternativeCommits = new List<TileCollisionAlternativeCommit> { commit };
+                var beforeFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, new string[0]);
+                var beforeAlternatives = CaptureTileCollisionAlternatives(selectedMap, alternativeCommits);
                 var result = _tileCollisionExecutor.ApplyTileCollisionAlternativeEdits(godotRoot, selectedMap, new List<TileCollisionAlternativeCommit> { commit });
+                var afterFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, new string[0]);
+                var afterAlternatives = CaptureTileCollisionAlternatives(selectedMap, alternativeCommits);
+                PushTileCollisionUndo(
+                    "Remove tile collision",
+                    selectedMap,
+                    beforeFiles,
+                    afterFiles,
+                    beforeAlternatives,
+                    afterAlternatives,
+                    affectedTileSets);
                 _mapPreviewCanvas.EvictTileSetCacheForResPath(cell.TileSetResPath);
                 _mapPreviewCanvas.ClearTileCollisionSelection();
                 e.Accepted = true;
@@ -806,7 +847,19 @@ namespace MapEditorTool.UI
                 }
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var beforeFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, evictedTileSets);
+                var beforeAlternatives = CaptureTileCollisionAlternatives(selectedMap, commits);
                 var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, commits);
+                var afterFiles = _tileCollisionSnapshotExecutor.CaptureFiles(godotRoot, selectedMap, evictedTileSets);
+                var afterAlternatives = CaptureTileCollisionAlternatives(selectedMap, commits);
+                PushTileCollisionUndo(
+                    oneWay ? "Set tile collision one-way" : "Set tile collision solid",
+                    selectedMap,
+                    beforeFiles,
+                    afterFiles,
+                    beforeAlternatives,
+                    afterAlternatives,
+                    evictedTileSets);
                 foreach (var tileSetResPath in evictedTileSets)
                     _mapPreviewCanvas.EvictTileSetCacheForResPath(tileSetResPath);
                 _mapPreviewCanvas.ClearTileCollisionSelection();
@@ -1590,6 +1643,32 @@ namespace MapEditorTool.UI
                 ApplyNodePositionUndoSnapshot));
         }
 
+        private void PushTileCollisionUndo(
+            string name,
+            MapDefinition map,
+            TileCollisionFileSnapshot beforeFiles,
+            TileCollisionFileSnapshot afterFiles,
+            Dictionary<TileCollisionAlternativeKey, int> beforeAlternatives,
+            Dictionary<TileCollisionAlternativeKey, int> afterAlternatives,
+            IEnumerable<string> tileSetResPaths)
+        {
+            if (_isReplayingUndo)
+                return;
+            if (map == null || beforeFiles == null || afterFiles == null)
+                return;
+
+            _undoManager.Push(new TileCollisionUndoAction(
+                string.IsNullOrWhiteSpace(name) ? "Tile collision edit" : name,
+                map,
+                beforeFiles,
+                afterFiles,
+                beforeAlternatives,
+                afterAlternatives,
+                tileSetResPaths,
+                _tileCollisionSnapshotExecutor,
+                ApplyTileCollisionUndoSnapshot));
+        }
+
         private void UndoLastAction()
         {
             if (!_undoManager.CanUndo)
@@ -1677,6 +1756,20 @@ namespace MapEditorTool.UI
             _scenePatchExecutor.PatchNodePosition(sceneFilePath, nodePath, x, y);
             mapPropertyGrid.Refresh();
             _viewModel.MarkSelectedMapEdited("Node position undo");
+        }
+
+        private void ApplyTileCollisionUndoSnapshot(MapDefinition map, IEnumerable<string> tileSetResPaths)
+        {
+            if (tileSetResPaths != null)
+            {
+                foreach (var tileSetResPath in tileSetResPaths)
+                    _mapPreviewCanvas.EvictTileSetCacheForResPath(tileSetResPath);
+            }
+
+            _mapPreviewCanvas.ClearTileCollisionSelection();
+            _mapPreviewCanvas.Invalidate();
+            mapPropertyGrid.Refresh();
+            _viewModel.MarkSelectedMapEdited("Tile collision undo");
         }
 
         private void MapToolSelectionChanged(object sender, EventArgs e)
@@ -1949,6 +2042,59 @@ namespace MapEditorTool.UI
                 clone.Add(new GodotVector2(point.X, point.Y));
 
             return clone;
+        }
+
+        private static Dictionary<TileCollisionAlternativeKey, int> CaptureTileCollisionAlternatives(MapDefinition map, IEnumerable<TileCollisionCommit> commits)
+        {
+            var keys = new List<TileCollisionAlternativeKey>();
+            if (commits != null)
+            {
+                foreach (var commit in commits)
+                {
+                    if (commit == null)
+                        continue;
+
+                    keys.Add(new TileCollisionAlternativeKey(commit.LayerNodePath, commit.CellX, commit.CellY));
+                }
+            }
+
+            return CaptureTileCollisionAlternatives(map, keys);
+        }
+
+        private static Dictionary<TileCollisionAlternativeKey, int> CaptureTileCollisionAlternatives(MapDefinition map, IEnumerable<TileCollisionAlternativeCommit> commits)
+        {
+            var keys = new List<TileCollisionAlternativeKey>();
+            if (commits != null)
+            {
+                foreach (var commit in commits)
+                {
+                    if (commit == null)
+                        continue;
+
+                    keys.Add(new TileCollisionAlternativeKey(commit.LayerNodePath, commit.CellX, commit.CellY));
+                }
+            }
+
+            return CaptureTileCollisionAlternatives(map, keys);
+        }
+
+        private static Dictionary<TileCollisionAlternativeKey, int> CaptureTileCollisionAlternatives(MapDefinition map, IEnumerable<TileCollisionAlternativeKey> keys)
+        {
+            var snapshot = new Dictionary<TileCollisionAlternativeKey, int>();
+            if (map == null || map.TileLayers == null || keys == null)
+                return snapshot;
+
+            foreach (var key in keys)
+            {
+                var layer = map.TileLayers.FirstOrDefault(item => item != null && string.Equals(item.NodePath, key.LayerNodePath, StringComparison.Ordinal));
+                var cell = layer == null || layer.Cells == null
+                    ? null
+                    : layer.Cells.FirstOrDefault(item => item != null && item.X == key.CellX && item.Y == key.CellY);
+                if (cell != null)
+                    snapshot[key] = cell.Alternative;
+            }
+
+            return snapshot;
         }
 
         private static string FormatPortalName(Portal portal)
@@ -2821,6 +2967,149 @@ namespace MapEditorTool.UI
             {
                 if (_apply != null)
                     _apply(_map, _nodePath, _toX, _toY);
+            }
+        }
+
+        private sealed class TileCollisionUndoAction : IUndoableAction
+        {
+            private readonly MapDefinition _map;
+            private readonly TileCollisionFileSnapshot _beforeFiles;
+            private readonly TileCollisionFileSnapshot _afterFiles;
+            private readonly Dictionary<TileCollisionAlternativeKey, int> _beforeAlternatives;
+            private readonly Dictionary<TileCollisionAlternativeKey, int> _afterAlternatives;
+            private readonly List<string> _tileSetResPaths;
+            private readonly TileCollisionSnapshotExecutor _snapshotExecutor;
+            private readonly Action<MapDefinition, IEnumerable<string>> _afterApply;
+
+            public TileCollisionUndoAction(
+                string name,
+                MapDefinition map,
+                TileCollisionFileSnapshot beforeFiles,
+                TileCollisionFileSnapshot afterFiles,
+                Dictionary<TileCollisionAlternativeKey, int> beforeAlternatives,
+                Dictionary<TileCollisionAlternativeKey, int> afterAlternatives,
+                IEnumerable<string> tileSetResPaths,
+                TileCollisionSnapshotExecutor snapshotExecutor,
+                Action<MapDefinition, IEnumerable<string>> afterApply)
+            {
+                Name = name ?? string.Empty;
+                _map = map;
+                _beforeFiles = beforeFiles;
+                _afterFiles = afterFiles;
+                _beforeAlternatives = CloneAlternativeSnapshot(beforeAlternatives);
+                _afterAlternatives = CloneAlternativeSnapshot(afterAlternatives);
+                _tileSetResPaths = DistinctTileSetPaths(tileSetResPaths);
+                _snapshotExecutor = snapshotExecutor;
+                _afterApply = afterApply;
+            }
+
+            public string Name { get; private set; }
+
+            public string CompletionHint
+            {
+                get { return "TileSet and scene files restored."; }
+            }
+
+            public void Undo()
+            {
+                Apply(_beforeFiles, _beforeAlternatives);
+            }
+
+            public void Redo()
+            {
+                Apply(_afterFiles, _afterAlternatives);
+            }
+
+            private void Apply(TileCollisionFileSnapshot files, Dictionary<TileCollisionAlternativeKey, int> alternatives)
+            {
+                if (_snapshotExecutor != null)
+                    _snapshotExecutor.RestoreFiles(files);
+                RestoreAlternatives(alternatives);
+                if (_afterApply != null)
+                    _afterApply(_map, _tileSetResPaths);
+            }
+
+            private void RestoreAlternatives(Dictionary<TileCollisionAlternativeKey, int> alternatives)
+            {
+                if (_map == null || _map.TileLayers == null || alternatives == null)
+                    return;
+
+                foreach (var item in alternatives)
+                {
+                    var layer = _map.TileLayers.FirstOrDefault(candidate => candidate != null && string.Equals(candidate.NodePath, item.Key.LayerNodePath, StringComparison.Ordinal));
+                    var cell = layer == null || layer.Cells == null
+                        ? null
+                        : layer.Cells.FirstOrDefault(candidate => candidate != null && candidate.X == item.Key.CellX && candidate.Y == item.Key.CellY);
+                    if (cell != null)
+                        cell.Alternative = item.Value;
+                }
+            }
+
+            private static Dictionary<TileCollisionAlternativeKey, int> CloneAlternativeSnapshot(Dictionary<TileCollisionAlternativeKey, int> source)
+            {
+                var clone = new Dictionary<TileCollisionAlternativeKey, int>();
+                if (source == null)
+                    return clone;
+
+                foreach (var item in source)
+                    clone[item.Key] = item.Value;
+
+                return clone;
+            }
+
+            private static List<string> DistinctTileSetPaths(IEnumerable<string> source)
+            {
+                var result = new List<string>();
+                if (source == null)
+                    return result;
+
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in source)
+                {
+                    if (string.IsNullOrWhiteSpace(item))
+                        continue;
+                    if (seen.Add(item))
+                        result.Add(item);
+                }
+
+                return result;
+            }
+        }
+
+        private struct TileCollisionAlternativeKey : IEquatable<TileCollisionAlternativeKey>
+        {
+            public TileCollisionAlternativeKey(string layerNodePath, int cellX, int cellY)
+            {
+                LayerNodePath = layerNodePath ?? string.Empty;
+                CellX = cellX;
+                CellY = cellY;
+            }
+
+            public string LayerNodePath { get; private set; }
+            public int CellX { get; private set; }
+            public int CellY { get; private set; }
+
+            public bool Equals(TileCollisionAlternativeKey other)
+            {
+                return string.Equals(LayerNodePath, other.LayerNodePath, StringComparison.Ordinal) &&
+                    CellX == other.CellX &&
+                    CellY == other.CellY;
+            }
+
+            public override bool Equals(object obj)
+            {
+                return obj is TileCollisionAlternativeKey && Equals((TileCollisionAlternativeKey)obj);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    var hash = StringComparer.Ordinal.GetHashCode(LayerNodePath ?? string.Empty);
+                    hash = (hash * 397) ^ CellX;
+                    hash = (hash * 397) ^ CellY;
+                    return hash;
+                }
             }
         }
     }

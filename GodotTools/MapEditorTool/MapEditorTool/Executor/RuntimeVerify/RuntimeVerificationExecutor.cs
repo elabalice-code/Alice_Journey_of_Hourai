@@ -376,7 +376,7 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("TileCollisionExecutor")
                     && text.Contains("ApplyTileCollisionEdits")
                     && text.Contains("TileCollisionCommit")
-                    && text.Contains("Tile collision vertex saved")
+                    && text.Contains("Tile collision edit saved")
                     && text.Contains("EvictTileSetCacheForResPath")
                     && text.Contains("ClearTileCollisionSelection"),
                 "MapEditorTool UI routes TileSet collision vertex edits through TileCollisionExecutor and refreshes preview cache.");
@@ -472,6 +472,20 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PatchNodePosition")
                     && text.Contains("Scene file updated"),
                 "MapEditorTool UI can undo and redo portal/entity position edits while patching the scene file through ScenePatchExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-tileset-collision-undo-redo", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("TileCollisionUndoAction")
+                    && text.Contains("PushTileCollisionUndo")
+                    && text.Contains("CaptureTileCollisionAlternatives")
+                    && text.Contains("ApplyTileCollisionUndoSnapshot")
+                    && text.Contains("TileSet and scene files restored"),
+                "MapEditorTool UI can undo and redo TileSet collision edits while restoring scene/model alternatives.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-executor-tileset-collision-snapshots", "GodotTools/MapEditorTool/MapEditorTool/Executor/TileCollision/TileCollisionSnapshotExecutor.cs",
+                text => text.Contains("TileCollisionSnapshotExecutor")
+                    && text.Contains("CaptureFiles")
+                    && text.Contains("RestoreFiles")
+                    && text.Contains("File.WriteAllText")
+                    && text.Contains("ResolveGodotResourcePath"),
+                "MapEditorTool TileCollision executor owns external file snapshots used by TileSet collision undo/redo.");
             AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
                 text => text.Contains("LinksPreviewCanvas")
                     && text.Contains("DrawEdges")

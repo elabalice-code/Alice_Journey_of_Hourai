@@ -84,6 +84,8 @@
     <Compile Include="Executor\TileCollision\GodotTileSetLoader.cs" />
     <Compile Include="Executor\TileCollision\TileCollisionExecutor.cs" />
     <Compile Include="Executor\TileCollision\TileCollisionModels.cs" />
+    <Compile Include="Executor\TileCollision\TileCollisionSnapshotExecutor.cs" />
+    <Compile Include="Executor\TileCollision\TileCollisionSnapshotModels.cs" />
     <Compile Include="Models\MapProject.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalDecision.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalMachine.cs" />
