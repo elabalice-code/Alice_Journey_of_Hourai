@@ -1,0 +1,513 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using MapEditorTool.Executor.MapImport;
+using MapEditorTool.Executor.MapImport.Tscn;
+using MapEditorTool.Models;
+
+namespace MapEditorTool.Executor.RuntimeVerify
+{
+    public sealed class RuntimeVerificationExecutor
+    {
+        private readonly MapImportExecutor _importExecutor;
+
+        public RuntimeVerificationExecutor()
+            : this(new MapImportExecutor())
+        {
+        }
+
+        public RuntimeVerificationExecutor(MapImportExecutor importExecutor)
+        {
+            _importExecutor = importExecutor;
+        }
+
+        public MapRuntimeVerificationReport BuildRuntimeVerificationReport(string godotRoot)
+        {
+            godotRoot = Path.GetFullPath(godotRoot);
+            var project = _importExecutor.ImportFromGodotRoot(godotRoot);
+            var mapScenes = project.Maps
+                .Where(x => !string.IsNullOrWhiteSpace(x.ScenePath) && x.ScenePath.StartsWith("res://", StringComparison.Ordinal))
+                .OrderBy(x => x.ScenePath, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var mapSceneSet = new HashSet<string>(mapScenes.Select(x => x.ScenePath), StringComparer.OrdinalIgnoreCase);
+            var uidIndex = BuildSceneUidIndex(godotRoot);
+
+            var checks = new List<MapRuntimeCheck>();
+            AddCoreRuntimeChecks(checks, godotRoot);
+            AddMapEditorToolChecks(checks, godotRoot);
+            AddMapEditorDataLocationChecks(checks, godotRoot, project);
+
+            var entryRooms = BuildRuntimeEntryRooms(godotRoot, uidIndex, mapSceneSet);
+            foreach (var entry in entryRooms)
+            {
+                if (!entry.Exists || !entry.InImportedMapGraph)
+                {
+                    checks.Add(new MapRuntimeCheck
+                    {
+                        Id = "entry-room-" + SanitizeCheckId(entry.Source),
+                        Passed = false,
+                        Path = entry.ResolvedPath,
+                        Detail = entry.Source + " entry room does not resolve to an imported map scene."
+                    });
+                }
+            }
+
+            var portalTargets = BuildRuntimePortalTargets(project, uidIndex, mapSceneSet);
+            foreach (var target in portalTargets.Where(x => !x.ResolvesToImportedMap))
+            {
+                checks.Add(new MapRuntimeCheck
+                {
+                    Id = "portal-target-" + SanitizeCheckId(target.FromMapPath + "-" + target.PortalId),
+                    Passed = false,
+                    Path = target.FromMapPath,
+                    Detail = "Portal target does not resolve to an imported map: " + target.RawTargetMap
+                });
+            }
+
+            var issues = checks.Where(x => !x.Passed).ToList();
+            return new MapRuntimeVerificationReport
+            {
+                ProjectRoot = godotRoot,
+                ProjectFileExists = File.Exists(Path.Combine(godotRoot, "project.godot")),
+                GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                VerificationKind = "static-game-effect",
+                ProofScope = "Static verifier: checks imported MapEditorTool map and portal data against CoreEngine script surfaces that consume target_map, target_area, collision JSON, texture metadata, and generated rooms. It does not execute a live player transition.",
+                MapCount = mapScenes.Count,
+                PortalCount = project.Maps.Sum(x => x.Portals.Count),
+                LinkCount = project.Links.Count,
+                PortalTargetCount = portalTargets.Count,
+                ResolvedPortalTargetCount = portalTargets.Count(x => x.ResolvesToImportedMap),
+                EntryRoomCount = entryRooms.Count,
+                ResolvedEntryRoomCount = entryRooms.Count(x => x.Exists && x.InImportedMapGraph),
+                CheckCount = checks.Count,
+                IssueCount = issues.Count,
+                Ok = File.Exists(Path.Combine(godotRoot, "project.godot")) && issues.Count == 0,
+                Checks = checks,
+                EntryRooms = entryRooms,
+                PortalTargets = portalTargets.Take(100).ToList(),
+                Issues = issues.Select(x => x.Detail).Take(50).ToList()
+            };
+        }
+
+        public string FormatRuntimeVerificationSummary(MapRuntimeVerificationReport report)
+        {
+            var lines = new List<string>
+            {
+                "MapEditorTool runtime verify",
+                "Project: " + report.ProjectRoot,
+                "Generated UTC: " + report.GeneratedAtUtc,
+                "Kind: " + report.VerificationKind,
+                "Overall: " + (report.Ok ? "OK" : "FAILED") + " issues=" + report.IssueCount,
+                "Counts: maps=" + report.MapCount +
+                    " links=" + report.LinkCount +
+                    " portals=" + report.PortalCount +
+                    " portalTargets=" + report.ResolvedPortalTargetCount + "/" + report.PortalTargetCount +
+                    " entryRooms=" + report.ResolvedEntryRoomCount + "/" + report.EntryRoomCount +
+                    " checks=" + report.CheckCount,
+                "Scope: " + report.ProofScope,
+                "Runtime checks:"
+            };
+
+            foreach (var check in report.Checks)
+                lines.Add("  " + (check.Passed ? "OK" : "FAIL") + " " + check.Id + " - " + check.Detail);
+
+            lines.Add("Entry rooms:");
+            if (report.EntryRooms.Count == 0)
+                lines.Add("  none");
+            foreach (var entry in report.EntryRooms)
+                lines.Add("  " + (entry.Exists && entry.InImportedMapGraph ? "OK" : "FAIL") + " " + entry.Source + ": " + entry.RawValue + " -> " + entry.ResolvedPath);
+
+            lines.Add("Issues:");
+            if (report.Issues.Count == 0)
+                lines.Add("  none");
+            foreach (var issue in report.Issues)
+                lines.Add("  " + issue);
+
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
+        private static void AddCoreRuntimeChecks(List<MapRuntimeCheck> checks, string godotRoot)
+        {
+            AddTextCheck(checks, godotRoot, "portal-script-exists", "CoreEngine/Scripts/World/Portal.gd", text => true, "Portal script exists.");
+            AddTextCheck(checks, godotRoot, "portal-exports-target-map", "CoreEngine/Scripts/World/Portal.gd",
+                text => text.Contains("@export_file(\"room_link\") var target_map"),
+                "Portal exports target_map with room_link picker.");
+            AddTextCheck(checks, godotRoot, "portal-sends-load-room-request", "CoreEngine/Scripts/World/Portal.gd",
+                text => text.Contains("TYPE_LOAD_ROOM_REQUEST") && text.Contains("\"target_map\": target_map"),
+                "Portal sends TYPE_LOAD_ROOM_REQUEST with target_map.");
+            AddTextCheck(checks, godotRoot, "room-flow-actor-registers-load-room-request", "CoreEngine/Scripts/Actor/RoomFlowActor.gd",
+                text => text.Contains("TYPE_LOAD_ROOM_REQUEST") && text.Contains("RoomFlowRouterScript.route"),
+                "RoomFlowActor registers load-room messages and delegates them to MapFlow.");
+            AddTextCheck(checks, godotRoot, "room-flow-router-reads-target-map", "CoreEngine/Scripts/Signal/MapFlow/RoomFlowRouter.gd",
+                text => text.Contains("TYPE_LOAD_ROOM_REQUEST") && text.Contains("target_map"),
+                "RoomFlowRouter reads target_map from TYPE_LOAD_ROOM_REQUEST.");
+            AddTextCheck(checks, godotRoot, "room-flow-executor-calls-game-load-room", "CoreEngine/Scripts/Actor/RoomFlowIntentExecutor.gd",
+                text => text.Contains("game.load_room(target)"),
+                "RoomFlowIntentExecutor calls game.load_room(target).");
+            AddTextCheck(checks, godotRoot, "metsys-load-room-exists", "addons/MetroidvaniaSystem/Template/Scripts/MetSysGame.gd",
+                text => text.Contains("func load_room(path"),
+                "MetSysGame exposes load_room(path).");
+            AddTextCheck(checks, godotRoot, "game-declares-initial-room", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("INITIAL_ROOM_PATH"),
+                "Game.gd declares INITIAL_ROOM_PATH.");
+            AddTextCheck(checks, godotRoot, "game-exports-starting-map", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("@export_file(\"room_link\") var starting_map"),
+                "Game.gd exports starting_map with room_link picker.");
+            AddTextCheck(checks, godotRoot, "area-catalog-starting-rooms", "CoreEngine/Scripts/World/AreaCatalog.gd",
+                text => ExtractResPaths(text).Any(x => x.StartsWith("res://CoreEngine/Maps/", StringComparison.Ordinal)),
+                "AreaCatalog.gd references area starting rooms.");
+            AddTextCheck(checks, godotRoot, "portal-runtime-consumes-mapeditor-portal-fields", "CoreEngine/Scripts/World/Portal.gd",
+                text => text.Contains("@export_file(\"room_link\") var target_map")
+                    && text.Contains("@export var target_area")
+                    && text.Contains("@export_dir var portal_anim_dir")
+                    && text.Contains("@export var portal_anim_fps")
+                    && text.Contains("@export var portal_upscale")
+                    && text.Contains("TYPE_LOAD_ROOM_REQUEST"),
+                "Portal runtime consumes MapEditor portal targets and custom portal animation fields.");
+            AddTextCheck(checks, godotRoot, "template-room-map-consumes-texture-fields", "CoreEngine/Scripts/World/TemplateRoomMap.gd",
+                text => text.Contains("@export var template")
+                    && text.Contains("@export var foreground_texture")
+                    && text.Contains("@export var background_texture"),
+                "TemplateRoomMap consumes MapEditor-authored template and texture fields.");
+            AddTextCheck(checks, godotRoot, "map-runtime-surface-consumes-collision-metadata", "CoreEngine/Scripts/Actor/MapRuntimeSurface.gd",
+                text => text.Contains("collision_fgtex_path")
+                    && text.Contains("CollisionFromJson")
+                    && text.Contains("selected_path_from_metadata"),
+                "MapRuntimeSurface consumes collision metadata and selects MapEditor collision JSON paths.");
+            AddTextCheck(checks, godotRoot, "map-room-load-orchestrator-loads-map-scenes", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
+                text => text.Contains("load_room_with_progress")
+                    && text.Contains("load_packed_scene_threaded")
+                    && text.Contains("game.map = new_map"),
+                "MapRoomLoadOrchestrator owns threaded map scene replacement.");
+            AddTextCheck(checks, godotRoot, "generated-room-factory-handles-gen-rooms", "CoreEngine/Scripts/Actor/GeneratedRoomFactory.gd",
+                text => text.Contains("path.begins_with(\"GEN\")")
+                    && text.Contains("CoreEngine/Maps/Junction.tscn")
+                    && text.Contains("apply_config"),
+                "GeneratedRoomFactory owns runtime-only GEN room construction from Junction.tscn.");
+        }
+
+        private static void AddMapEditorToolChecks(List<MapRuntimeCheck> checks, string godotRoot)
+        {
+            AddTextCheck(checks, godotRoot, "mapeditortool-imports-portal-targets", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapImport/GodotMapImporter.cs",
+                text => text.Contains("\"target_map\"") && text.Contains("\"target_area\""),
+                "MapEditorTool importer reads Portal target_map/target_area from map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-imports-collision-metadata", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapImport/GodotMapImporter.cs",
+                text => text.Contains("metadata/collision_mode")
+                    && text.Contains("metadata/collision_tile_path")
+                    && text.Contains("metadata/collision_fgtex_path"),
+                "MapEditorTool importer reads collision metadata from map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-imports-tile-map-data", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapImport/GodotMapImporter.cs",
+                text => text.Contains("TileMapLayer")
+                    && text.Contains("tile_set")
+                    && text.Contains("tile_map_data")
+                    && text.Contains("DecodeTileMapData"),
+                "MapEditorTool importer reads TileMapLayer tile_set and tile_map_data from map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-project-file-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ProjectFile/ProjectFileExecutor.cs",
+                text => text.Contains("LoadProject") && text.Contains("SaveProject"),
+                "MapEditorTool project file executor can load and save MapProject JSON.");
+        }
+
+        private static void AddTextCheck(
+            List<MapRuntimeCheck> checks,
+            string godotRoot,
+            string id,
+            string relativePath,
+            Func<string, bool> predicate,
+            string detail)
+        {
+            var path = Path.Combine(godotRoot, relativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (!File.Exists(path))
+            {
+                checks.Add(new MapRuntimeCheck
+                {
+                    Id = id,
+                    Passed = false,
+                    Path = relativePath,
+                    Detail = detail + " File missing."
+                });
+                return;
+            }
+
+            var text = File.ReadAllText(path);
+            checks.Add(new MapRuntimeCheck
+            {
+                Id = id,
+                Passed = predicate(text),
+                Path = relativePath,
+                Detail = detail
+            });
+        }
+
+        private static void AddMapEditorDataLocationChecks(List<MapRuntimeCheck> checks, string godotRoot, MapProject project)
+        {
+            foreach (var map in project.Maps
+                .Where(x => !string.IsNullOrWhiteSpace(x.ScenePath))
+                .OrderBy(x => x.ScenePath, StringComparer.OrdinalIgnoreCase))
+            {
+                checks.Add(new MapRuntimeCheck
+                {
+                    Id = "map-scene-location-" + SanitizeCheckId(map.ScenePath),
+                    Passed = map.ScenePath.StartsWith("res://CoreEngine/Maps/", StringComparison.Ordinal)
+                        && File.Exists(ToAbsoluteGodotPath(godotRoot, map.ScenePath)),
+                    Path = map.ScenePath,
+                    Detail = "Imported map scene must stay under CoreEngine/Maps and exist: " + map.ScenePath
+                });
+
+                if (map.CollisionUsed == CollisionMode.ForegroundTexture && string.IsNullOrWhiteSpace(map.ForegroundTextureCollisionDataPath))
+                {
+                    checks.Add(new MapRuntimeCheck
+                    {
+                        Id = "map-fg-collision-path-required-" + SanitizeCheckId(map.ScenePath),
+                        Passed = false,
+                        Path = map.ScenePath,
+                        Detail = "Foreground-texture collision mode requires collision_fgtex_path on " + map.ScenePath + "."
+                    });
+                }
+            }
+
+            var collisionPaths = project.Maps
+                .SelectMany(map => new[]
+                {
+                    new CollisionPathItem(map.TileCollisionDataPath, "collision_tile.json", map.ScenePath),
+                    new CollisionPathItem(map.ForegroundTextureCollisionDataPath, "collision_fgtex.json", map.ScenePath)
+                })
+                .Where(x => !string.IsNullOrWhiteSpace(x.Path))
+                .GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                .Select(x => x.First())
+                .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (var item in collisionPaths)
+            {
+                var resPath = item.Path.Trim();
+                var absPath = ToAbsoluteGodotPath(godotRoot, resPath);
+                var locationOk = resPath.StartsWith("res://CoreEngine/Maps/Resources/", StringComparison.Ordinal)
+                    && resPath.EndsWith("/" + item.ExpectedFileName, StringComparison.OrdinalIgnoreCase);
+                checks.Add(new MapRuntimeCheck
+                {
+                    Id = "mapeditor-collision-path-location-" + SanitizeCheckId(resPath),
+                    Passed = locationOk,
+                    Path = resPath,
+                    Detail = "MapEditor collision JSON should stay under CoreEngine/Maps/Resources/<Map>/" + item.ExpectedFileName + ": " + resPath
+                });
+                checks.Add(new MapRuntimeCheck
+                {
+                    Id = "mapeditor-collision-json-exists-" + SanitizeCheckId(resPath),
+                    Passed = File.Exists(absPath),
+                    Path = resPath,
+                    Detail = "MapEditor collision JSON exists for imported metadata path: " + resPath
+                });
+                checks.Add(new MapRuntimeCheck
+                {
+                    Id = "mapeditor-collision-json-shape-" + SanitizeCheckId(resPath),
+                    Passed = File.Exists(absPath) && LooksLikeCollisionLayoutJson(absPath),
+                    Path = resPath,
+                    Detail = "MapEditor collision JSON has room dimensions plus solid grid or polygon data: " + resPath
+                });
+            }
+        }
+
+        private static bool LooksLikeCollisionLayoutJson(string absPath)
+        {
+            try
+            {
+                var text = File.ReadAllText(absPath);
+                var hasWidth = text.Contains("\"RoomWidth\"") || text.Contains("\"roomWidth\"");
+                var hasHeight = text.Contains("\"RoomHeight\"") || text.Contains("\"roomHeight\"");
+                var hasSolid = text.Contains("\"Solid\"") || text.Contains("\"solid\"");
+                var hasPolygons = text.Contains("\"Polygons\"") || text.Contains("\"polygons\"");
+                return hasWidth && hasHeight && (hasSolid || hasPolygons);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static List<MapRuntimeEntryRoom> BuildRuntimeEntryRooms(string godotRoot, Dictionary<string, string> uidIndex, HashSet<string> mapSceneSet)
+        {
+            var entries = new List<MapRuntimeEntryRoom>();
+            var gamePath = Path.Combine(godotRoot, "CoreEngine", "Game.tscn");
+            if (File.Exists(gamePath))
+            {
+                var scene = TscnParser.ParseFile(gamePath);
+                var gameNode = scene.Nodes.FirstOrDefault(x => string.Equals(x.Name, "Game", StringComparison.Ordinal));
+                string startingMap;
+                if (gameNode != null && gameNode.RawProps.TryGetValue("starting_map", out startingMap))
+                    entries.Add(BuildRuntimeEntryRoom("Game.tscn starting_map", UnquoteGodotValue(startingMap), godotRoot, uidIndex, mapSceneSet));
+            }
+
+            var gameScriptPath = Path.Combine(godotRoot, "CoreEngine", "Scripts", "Systems", "Game.gd");
+            if (File.Exists(gameScriptPath))
+            {
+                var initialRoom = ExtractConstString(File.ReadAllText(gameScriptPath), "INITIAL_ROOM_PATH");
+                if (!string.IsNullOrWhiteSpace(initialRoom))
+                    entries.Add(BuildRuntimeEntryRoom("Game.gd INITIAL_ROOM_PATH", initialRoom, godotRoot, uidIndex, mapSceneSet));
+            }
+
+            var areaCatalogPath = Path.Combine(godotRoot, "CoreEngine", "Scripts", "World", "AreaCatalog.gd");
+            if (File.Exists(areaCatalogPath))
+            {
+                foreach (var path in ExtractResPaths(File.ReadAllText(areaCatalogPath))
+                    .Where(x => x.StartsWith("res://CoreEngine/Maps/", StringComparison.Ordinal))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+                {
+                    entries.Add(BuildRuntimeEntryRoom("AreaCatalog.gd starting_room", path, godotRoot, uidIndex, mapSceneSet));
+                }
+            }
+
+            return entries;
+        }
+
+        private static MapRuntimeEntryRoom BuildRuntimeEntryRoom(string source, string rawValue, string godotRoot, Dictionary<string, string> uidIndex, HashSet<string> mapSceneSet)
+        {
+            var resolved = ResolveRuntimeResPath(rawValue, uidIndex);
+            return new MapRuntimeEntryRoom
+            {
+                Source = source,
+                RawValue = rawValue,
+                ResolvedPath = resolved,
+                Exists = !string.IsNullOrWhiteSpace(resolved) && File.Exists(ToAbsoluteGodotPath(godotRoot, resolved)),
+                InImportedMapGraph = !string.IsNullOrWhiteSpace(resolved) && mapSceneSet.Contains(resolved)
+            };
+        }
+
+        private static List<MapRuntimePortalTarget> BuildRuntimePortalTargets(MapProject project, Dictionary<string, string> uidIndex, HashSet<string> mapSceneSet)
+        {
+            return project.Maps
+                .SelectMany(map => map.Portals.Select(portal =>
+                {
+                    var raw = portal.TargetMapId == null ? string.Empty : portal.TargetMapId.Trim();
+                    var resolved = ResolveRuntimeResPath(raw, uidIndex);
+                    return new MapRuntimePortalTarget
+                    {
+                        FromMapPath = map.ScenePath,
+                        PortalId = portal.Id,
+                        PortalName = portal.Name,
+                        RawTargetMap = raw,
+                        ResolvedTargetMap = resolved,
+                        ResolvesToImportedMap = !string.IsNullOrWhiteSpace(resolved) && mapSceneSet.Contains(resolved)
+                    };
+                }))
+                .Where(x => !string.IsNullOrWhiteSpace(x.RawTargetMap))
+                .OrderBy(x => x.FromMapPath, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.PortalName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static Dictionary<string, string> BuildSceneUidIndex(string godotRoot)
+        {
+            var index = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in Directory.EnumerateFiles(godotRoot, "*.tscn", SearchOption.AllDirectories))
+            {
+                if (IsIgnoredScanPath(file))
+                    continue;
+
+                try
+                {
+                    var scene = TscnParser.ParseFile(file);
+                    if (string.IsNullOrWhiteSpace(scene.SceneUid))
+                        continue;
+                    var rel = GetRelativePath(godotRoot, file).Replace('\\', '/');
+                    index[scene.SceneUid] = "res://" + rel;
+                }
+                catch
+                {
+                    // Ignore malformed or transient files in generated folders.
+                }
+            }
+            return index;
+        }
+
+        private static bool IsIgnoredScanPath(string path)
+        {
+            var normalized = path.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+            return normalized.IndexOf(Path.DirectorySeparatorChar + ".godot" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf(Path.DirectorySeparatorChar + "bin" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) >= 0
+                || normalized.IndexOf(Path.DirectorySeparatorChar + "obj" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string ResolveRuntimeResPath(string rawValue, Dictionary<string, string> uidIndex)
+        {
+            var value = (rawValue ?? string.Empty).Trim();
+            if (value.StartsWith("uid://", StringComparison.OrdinalIgnoreCase))
+            {
+                string resolved;
+                return uidIndex.TryGetValue(value, out resolved) ? resolved : string.Empty;
+            }
+            if (value.StartsWith("res://", StringComparison.OrdinalIgnoreCase))
+                return value;
+            return string.Empty;
+        }
+
+        private static string ExtractConstString(string text, string constName)
+        {
+            var match = Regex.Match(text, "const\\s+" + Regex.Escape(constName) + "\\s*:\\s*\\w+\\s*=\\s*\"(?<value>[^\"]+)\"");
+            return match.Success ? match.Groups["value"].Value : string.Empty;
+        }
+
+        private static List<string> ExtractResPaths(string text)
+        {
+            return Regex.Matches(text, "\"(?<path>res://[^\"]+)\"")
+                .Cast<Match>()
+                .Select(x => x.Groups["path"].Value)
+                .ToList();
+        }
+
+        private static string UnquoteGodotValue(string raw)
+        {
+            raw = (raw ?? string.Empty).Trim();
+            if (raw.Length >= 2 && raw[0] == '"' && raw[raw.Length - 1] == '"')
+                return raw.Substring(1, raw.Length - 2);
+            return raw;
+        }
+
+        private static string SanitizeCheckId(string value)
+        {
+            var chars = (value ?? string.Empty)
+                .Select(ch => char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : '-')
+                .ToArray();
+            return string.Join("-", new string(chars).Split(new[] { '-' }, StringSplitOptions.RemoveEmptyEntries)).Trim('-');
+        }
+
+        private static string ToAbsoluteGodotPath(string godotRoot, string resPath)
+        {
+            var rel = resPath.StartsWith("res://", StringComparison.Ordinal) ? resPath.Substring("res://".Length) : resPath;
+            rel = rel.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+            return Path.Combine(godotRoot, rel);
+        }
+
+        private static string GetRelativePath(string rootDir, string path)
+        {
+            var rootUri = new Uri(EnsureTrailingSeparator(Path.GetFullPath(rootDir)));
+            var pathUri = new Uri(Path.GetFullPath(path));
+            return Uri.UnescapeDataString(rootUri.MakeRelativeUri(pathUri).ToString()).Replace('/', Path.DirectorySeparatorChar);
+        }
+
+        private static string EnsureTrailingSeparator(string path)
+        {
+            if (path.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
+                path.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal))
+                return path;
+
+            return path + Path.DirectorySeparatorChar;
+        }
+
+        private sealed class CollisionPathItem
+        {
+            public CollisionPathItem(string path, string expectedFileName, string source)
+            {
+                Path = path ?? string.Empty;
+                ExpectedFileName = expectedFileName ?? string.Empty;
+                Source = source ?? string.Empty;
+            }
+
+            public string Path { get; private set; }
+            public string ExpectedFileName { get; private set; }
+            public string Source { get; private set; }
+        }
+    }
+}

@@ -14,6 +14,8 @@ namespace MapEditorTool.ViewModel
             StatusText = string.Empty;
             LastSignalSummary = string.Empty;
             LastDeveloperComment = string.Empty;
+            LastReportSummary = string.Empty;
+            CurrentProjectPath = string.Empty;
             DeveloperCommentRequestSource = string.Empty;
             DeveloperCommentState = new DeveloperCommentSignalState();
         }
@@ -26,6 +28,9 @@ namespace MapEditorTool.ViewModel
         public string StatusText { get; set; }
         public string LastSignalSummary { get; set; }
         public string LastDeveloperComment { get; set; }
+        public string LastReportSummary { get; set; }
+        public string CurrentProjectPath { get; set; }
+        public bool ProjectDirty { get; set; }
         public int SignalCount { get; set; }
         public DateTimeOffset LastUpdatedAt { get; set; }
         public string[] MapNames { get; set; }

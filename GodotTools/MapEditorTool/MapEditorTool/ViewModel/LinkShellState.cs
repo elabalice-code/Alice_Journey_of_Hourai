@@ -4,11 +4,11 @@ namespace MapEditorTool.ViewModel
     {
         public LinkShellState()
         {
-            FromMap = "Forest Entrance";
-            FromPortal = "Portal_A";
-            ToMap = "Corridor";
-            ToPortal = "Portal_B";
-            Notes = "Consumer snapshot placeholder. Link UI refreshes from this object.";
+            FromMap = string.Empty;
+            FromPortal = string.Empty;
+            ToMap = string.Empty;
+            ToPortal = string.Empty;
+            Notes = "Import from Godot to populate this consumer snapshot.";
         }
 
         public string FromMap { get; set; }

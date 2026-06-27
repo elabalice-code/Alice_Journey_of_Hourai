@@ -41,12 +41,27 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Deployment" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Runtime.Serialization" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Executor\DeveloperCommentExecutor.cs" />
+    <Compile Include="Executor\MapImport\GodotMapImporter.cs" />
+    <Compile Include="Executor\MapImport\GodotProjectLocator.cs" />
+    <Compile Include="Executor\MapImport\MapImportExecutor.cs" />
+    <Compile Include="Executor\MapImport\Tscn\TscnParser.cs" />
+    <Compile Include="Executor\MapImport\Tscn\TscnScene.cs" />
+    <Compile Include="Executor\MapReport\MapReportExecutor.cs" />
+    <Compile Include="Executor\MapReport\MapReportModels.cs" />
+    <Compile Include="Executor\ProjectFile\ProjectFileExecutor.cs" />
+    <Compile Include="Executor\RuntimeVerify\RuntimeVerificationExecutor.cs" />
+    <Compile Include="Executor\RuntimeVerify\RuntimeVerificationModels.cs" />
+    <Compile Include="Executor\ScenePatch\ScenePatchExecutor.cs" />
+    <Compile Include="Executor\ScenePatch\ScenePatchResult.cs" />
+    <Compile Include="Executor\ScenePatch\TscnWriter.cs" />
+    <Compile Include="Models\MapProject.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalDecision.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalMachine.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalPhase.cs" />

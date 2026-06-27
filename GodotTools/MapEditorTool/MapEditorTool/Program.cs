@@ -10,7 +10,7 @@ namespace MapEditorTool
     internal static class Program
     {
         /// <summary>
-        /// 应用程序的主入口点。
+        /// Main application entry point.
         /// </summary>
         [STAThread]
         static void Main()
