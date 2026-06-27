@@ -27,6 +27,9 @@ namespace MapEditorTool.UI
         private bool _collisionPainting;
         private bool _collisionPaintValue;
         private int _lastPaintedCollisionIndex;
+        private int _selectedCollisionPolygonIndex;
+        private bool _collisionPolygonVertexDragging;
+        private int _collisionPolygonDragVertexIndex;
         private Portal _dragPortal;
         private float _dragFromX;
         private float _dragFromY;
@@ -38,6 +41,8 @@ namespace MapEditorTool.UI
         public event EventHandler<PortalAddRequestedEventArgs> PortalAddRequested;
         public event EventHandler<PortalContextRequestedEventArgs> PortalContextRequested;
         public event EventHandler<CollisionLayoutEditedEventArgs> CollisionLayoutEdited;
+        public event EventHandler<CollisionLayoutPolygonSelectedEventArgs> CollisionLayoutPolygonSelected;
+        public event EventHandler<CollisionLayoutPolygonEditedEventArgs> CollisionLayoutPolygonEdited;
 
         public MapPreviewCanvas()
         {
@@ -47,6 +52,8 @@ namespace MapEditorTool.UI
             Font = new Font("Segoe UI", 9f);
             TabStop = true;
             _godotRoot = string.Empty;
+            _selectedCollisionPolygonIndex = -1;
+            _collisionPolygonDragVertexIndex = -1;
         }
 
         public void SetData(MapDefinition map, string godotRoot)
@@ -68,6 +75,8 @@ namespace MapEditorTool.UI
             _collisionLayout = layout;
             _collisionTarget = target;
             _showCollisionOverlay = visible;
+            if (!IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
+                _selectedCollisionPolygonIndex = -1;
             Invalidate();
         }
 
@@ -128,6 +137,12 @@ namespace MapEditorTool.UI
             if (_map == null)
                 return;
 
+            if (CanEditCollisionPolygons() && e.Button == MouseButtons.Left)
+            {
+                if (BeginCollisionPolygonInteraction(e.Location))
+                    return;
+            }
+
             if (CanPaintCollisionLayout() && (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right))
             {
                 _collisionPainting = true;
@@ -185,6 +200,12 @@ namespace MapEditorTool.UI
             if (_map == null)
                 return;
 
+            if (_collisionPolygonVertexDragging && e.Button == MouseButtons.Left)
+            {
+                ApplyCollisionPolygonVertexDrag(e.Location);
+                return;
+            }
+
             if (_collisionPainting && (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right))
             {
                 ApplyCollisionPaintAt(e.Location);
@@ -220,6 +241,15 @@ namespace MapEditorTool.UI
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+
+            if (_collisionPolygonVertexDragging)
+            {
+                _collisionPolygonVertexDragging = false;
+                _collisionPolygonDragVertexIndex = -1;
+                Capture = false;
+                Cursor = Cursors.Default;
+                return;
+            }
 
             if (_collisionPainting)
             {
@@ -260,6 +290,19 @@ namespace MapEditorTool.UI
             }
         }
 
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+
+            if (e.KeyCode == Keys.Delete &&
+                _collisionEditorMode == CollisionEditorMode.CollisionLayout &&
+                IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
+            {
+                RemoveSelectedCollisionPolygon();
+                e.Handled = true;
+            }
+        }
+
         private RectangleF ComputeRoomBounds(int roomPixelWidth, int roomPixelHeight)
         {
             var pad = 18f;
@@ -282,8 +325,128 @@ namespace MapEditorTool.UI
             return _showCollisionOverlay &&
                 _collisionLayout != null &&
                 _collisionLayout.Solid != null &&
+                (_collisionLayout.Polygons == null || _collisionLayout.Polygons.Count == 0) &&
                 _collisionEditorMode == CollisionEditorMode.CollisionLayout &&
                 (_collisionEditorTool == CollisionEditorTool.AddBox || _collisionEditorTool == CollisionEditorTool.Remove);
+        }
+
+        private bool CanEditCollisionPolygons()
+        {
+            return _showCollisionOverlay &&
+                _collisionLayout != null &&
+                _collisionLayout.Polygons != null &&
+                _collisionLayout.Polygons.Count > 0 &&
+                _collisionEditorMode == CollisionEditorMode.CollisionLayout &&
+                (_collisionEditorTool == CollisionEditorTool.Select ||
+                 _collisionEditorTool == CollisionEditorTool.Vertex ||
+                 _collisionEditorTool == CollisionEditorTool.AddBox ||
+                 _collisionEditorTool == CollisionEditorTool.Remove);
+        }
+
+        private bool BeginCollisionPolygonInteraction(Point location)
+        {
+            if (_collisionEditorTool == CollisionEditorTool.Vertex)
+            {
+                int polygonIndex;
+                int vertexIndex;
+                if (HitTestCollisionPolygonVertex(location, out polygonIndex, out vertexIndex))
+                {
+                    SelectCollisionPolygon(polygonIndex);
+                    _collisionPolygonVertexDragging = true;
+                    _collisionPolygonDragVertexIndex = vertexIndex;
+                    Capture = true;
+                    Cursor = Cursors.SizeAll;
+                    return true;
+                }
+            }
+
+            int hitPolygonIndex;
+            if (!HitTestCollisionPolygon(location, out hitPolygonIndex))
+            {
+                if (_collisionEditorTool == CollisionEditorTool.Select ||
+                    _collisionEditorTool == CollisionEditorTool.Vertex ||
+                    _collisionEditorTool == CollisionEditorTool.AddBox)
+                    SelectCollisionPolygon(-1);
+                return false;
+            }
+
+            SelectCollisionPolygon(hitPolygonIndex);
+            if (_collisionEditorTool == CollisionEditorTool.Remove)
+            {
+                RemoveSelectedCollisionPolygon();
+                return true;
+            }
+
+            return _collisionEditorTool == CollisionEditorTool.Select || _collisionEditorTool == CollisionEditorTool.Vertex;
+        }
+
+        private void ApplyCollisionPolygonVertexDrag(Point location)
+        {
+            if (!IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
+                return;
+
+            var polygon = _collisionLayout.Polygons[_selectedCollisionPolygonIndex];
+            if (polygon == null || _collisionPolygonDragVertexIndex < 0 || _collisionPolygonDragVertexIndex >= polygon.Count)
+                return;
+
+            var screenWorld = ScreenToWorld(location);
+            var world = ClampToRoom(screenWorld.X, screenWorld.Y);
+            var current = polygon[_collisionPolygonDragVertexIndex];
+            if (current != null &&
+                Math.Abs(current.X - world.X) < 0.01f &&
+                Math.Abs(current.Y - world.Y) < 0.01f)
+                return;
+
+            polygon[_collisionPolygonDragVertexIndex] = new GodotVector2Data { X = world.X, Y = world.Y };
+            Invalidate();
+            RaiseCollisionPolygonEdited("Vertex moved", _selectedCollisionPolygonIndex);
+        }
+
+        private void RemoveSelectedCollisionPolygon()
+        {
+            if (!IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
+                return;
+
+            var removedIndex = _selectedCollisionPolygonIndex;
+            _collisionLayout.Polygons.RemoveAt(removedIndex);
+            _selectedCollisionPolygonIndex = -1;
+            Invalidate();
+            RaiseCollisionPolygonEdited("Polygon removed", removedIndex);
+            RaiseCollisionPolygonSelected(-1);
+        }
+
+        private void SelectCollisionPolygon(int polygonIndex)
+        {
+            if (polygonIndex >= 0 && !IsValidCollisionPolygonIndex(polygonIndex))
+                polygonIndex = -1;
+            if (_selectedCollisionPolygonIndex == polygonIndex)
+                return;
+
+            _selectedCollisionPolygonIndex = polygonIndex;
+            Invalidate();
+            RaiseCollisionPolygonSelected(polygonIndex);
+        }
+
+        private bool IsValidCollisionPolygonIndex(int polygonIndex)
+        {
+            return _collisionLayout != null &&
+                _collisionLayout.Polygons != null &&
+                polygonIndex >= 0 &&
+                polygonIndex < _collisionLayout.Polygons.Count;
+        }
+
+        private void RaiseCollisionPolygonSelected(int polygonIndex)
+        {
+            var handler = CollisionLayoutPolygonSelected;
+            if (handler != null)
+                handler(this, new CollisionLayoutPolygonSelectedEventArgs(_collisionLayout, _collisionTarget, polygonIndex));
+        }
+
+        private void RaiseCollisionPolygonEdited(string editName, int polygonIndex)
+        {
+            var handler = CollisionLayoutPolygonEdited;
+            if (handler != null)
+                handler(this, new CollisionLayoutPolygonEditedEventArgs(_collisionLayout, _collisionTarget, polygonIndex, editName));
         }
 
         private void ApplyCollisionPaintAt(Point location)
@@ -333,6 +496,104 @@ namespace MapEditorTool.UI
             x = ClampInt(x, 0, roomWidth - 1);
             y = ClampInt(y, 0, roomHeight - 1);
             return true;
+        }
+
+        private bool HitTestCollisionPolygonVertex(Point location, out int polygonIndex, out int vertexIndex)
+        {
+            polygonIndex = -1;
+            vertexIndex = -1;
+            if (_collisionLayout == null || _collisionLayout.Polygons == null || _map == null)
+                return false;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            var scale = bounds.Width / roomPixelWidth;
+            var radius = Math.Max(6f, 7f * scale);
+            var radiusSquared = radius * radius;
+
+            if (TryHitCollisionPolygonVertexAtIndex(_selectedCollisionPolygonIndex, location, bounds, scale, radiusSquared, out polygonIndex, out vertexIndex))
+                return true;
+
+            for (var i = _collisionLayout.Polygons.Count - 1; i >= 0; i--)
+            {
+                if (i == _selectedCollisionPolygonIndex)
+                    continue;
+                if (TryHitCollisionPolygonVertexAtIndex(i, location, bounds, scale, radiusSquared, out polygonIndex, out vertexIndex))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private bool TryHitCollisionPolygonVertexAtIndex(
+            int candidatePolygonIndex,
+            Point location,
+            RectangleF bounds,
+            float scale,
+            float radiusSquared,
+            out int polygonIndex,
+            out int vertexIndex)
+        {
+            polygonIndex = -1;
+            vertexIndex = -1;
+            if (!IsValidCollisionPolygonIndex(candidatePolygonIndex))
+                return false;
+
+            var polygon = _collisionLayout.Polygons[candidatePolygonIndex];
+            if (polygon == null)
+                return false;
+
+            for (var i = 0; i < polygon.Count; i++)
+            {
+                var point = polygon[i];
+                if (point == null)
+                    continue;
+
+                var screenX = bounds.X + point.X * scale;
+                var screenY = bounds.Y + point.Y * scale;
+                var dx = location.X - screenX;
+                var dy = location.Y - screenY;
+                if (dx * dx + dy * dy <= radiusSquared)
+                {
+                    polygonIndex = candidatePolygonIndex;
+                    vertexIndex = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool HitTestCollisionPolygon(Point location, out int polygonIndex)
+        {
+            polygonIndex = -1;
+            if (_collisionLayout == null || _collisionLayout.Polygons == null || _map == null)
+                return false;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            var scale = bounds.Width / roomPixelWidth;
+
+            for (var i = _collisionLayout.Polygons.Count - 1; i >= 0; i--)
+            {
+                var polygon = _collisionLayout.Polygons[i];
+                if (polygon == null || polygon.Count < 3)
+                    continue;
+
+                var points = polygon
+                    .Where(point => point != null)
+                    .Select(point => new PointF(bounds.X + point.X * scale, bounds.Y + point.Y * scale))
+                    .ToArray();
+                if (points.Length >= 3 && PointInPolygon(points, location))
+                {
+                    polygonIndex = i;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private Portal HitTestPortal(Point point)
@@ -404,6 +665,29 @@ namespace MapEditorTool.UI
             if (value > max)
                 return max;
             return value;
+        }
+
+        private static bool PointInPolygon(PointF[] polygon, Point point)
+        {
+            if (polygon == null || polygon.Length < 3)
+                return false;
+
+            var inside = false;
+            for (int i = 0, j = polygon.Length - 1; i < polygon.Length; j = i++)
+            {
+                var pi = polygon[i];
+                var pj = polygon[j];
+                var dy = pj.Y - pi.Y;
+                if (Math.Abs(dy) < 0.0001f)
+                    dy = 0.0001f;
+
+                var intersects = ((pi.Y > point.Y) != (pj.Y > point.Y)) &&
+                    point.X < (pj.X - pi.X) * (point.Y - pi.Y) / dy + pi.X;
+                if (intersects)
+                    inside = !inside;
+            }
+
+            return inside;
         }
 
         private void DrawTextures(Graphics graphics, RectangleF bounds, int roomPixelWidth, int roomPixelHeight)
@@ -580,19 +864,37 @@ namespace MapEditorTool.UI
 
             using (var fill = new SolidBrush(fillColor))
             using (var pen = new Pen(lineColor, 2f))
+            using (var selectedFill = new SolidBrush(Color.FromArgb(76, 120, 200, 255)))
+            using (var selectedPen = new Pen(Color.FromArgb(210, 70, 145, 235), 3f))
+            using (var handleBrush = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
+            using (var handlePen = new Pen(Color.FromArgb(220, 35, 40, 48), 1f))
             {
-                foreach (var polygon in _collisionLayout.Polygons)
+                for (var polygonIndex = 0; polygonIndex < _collisionLayout.Polygons.Count; polygonIndex++)
                 {
+                    var polygon = _collisionLayout.Polygons[polygonIndex];
                     if (polygon == null || polygon.Count < 2)
                         continue;
 
                     var points = polygon
+                        .Where(point => point != null)
                         .Select(point => new PointF(bounds.X + point.X * scale, bounds.Y + point.Y * scale))
                         .ToArray();
+                    var selected = polygonIndex == _selectedCollisionPolygonIndex;
                     if (points.Length >= 3)
-                        graphics.FillPolygon(fill, points);
+                        graphics.FillPolygon(selected ? selectedFill : fill, points);
                     if (points.Length >= 2)
-                        graphics.DrawPolygon(pen, points);
+                        graphics.DrawPolygon(selected ? selectedPen : pen, points);
+
+                    if (!selected)
+                        continue;
+
+                    var radius = Math.Max(4f, 5f * scale);
+                    for (var i = 0; i < points.Length; i++)
+                    {
+                        var rect = new RectangleF(points[i].X - radius, points[i].Y - radius, radius * 2f, radius * 2f);
+                        graphics.FillEllipse(handleBrush, rect);
+                        graphics.DrawEllipse(handlePen, rect);
+                    }
                 }
             }
         }
@@ -833,6 +1135,36 @@ namespace MapEditorTool.UI
         public int CellX { get; private set; }
         public int CellY { get; private set; }
         public bool Solid { get; private set; }
+    }
+
+    internal sealed class CollisionLayoutPolygonSelectedEventArgs : EventArgs
+    {
+        public CollisionLayoutPolygonSelectedEventArgs(CollisionLayoutData layout, CollisionLayoutTarget target, int polygonIndex)
+        {
+            Layout = layout;
+            Target = target;
+            PolygonIndex = polygonIndex;
+        }
+
+        public CollisionLayoutData Layout { get; private set; }
+        public CollisionLayoutTarget Target { get; private set; }
+        public int PolygonIndex { get; private set; }
+    }
+
+    internal sealed class CollisionLayoutPolygonEditedEventArgs : EventArgs
+    {
+        public CollisionLayoutPolygonEditedEventArgs(CollisionLayoutData layout, CollisionLayoutTarget target, int polygonIndex, string editName)
+        {
+            Layout = layout;
+            Target = target;
+            PolygonIndex = polygonIndex;
+            EditName = editName ?? string.Empty;
+        }
+
+        public CollisionLayoutData Layout { get; private set; }
+        public CollisionLayoutTarget Target { get; private set; }
+        public int PolygonIndex { get; private set; }
+        public string EditName { get; private set; }
     }
 
     internal sealed class PortalMoveCommittedEventArgs : EventArgs

@@ -340,6 +340,20 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("_currentCollisionOverlay")
                     && text.Contains("Collision layout"),
                 "MapEditorTool UI consumes collision layout paint edits, marks the project dirty, and saves the current edited overlay through the Save collision action.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-polygon-edit", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("CollisionLayoutPolygonSelected")
+                    && text.Contains("CollisionLayoutPolygonEdited")
+                    && text.Contains("HitTestCollisionPolygonVertex")
+                    && text.Contains("ApplyCollisionPolygonVertexDrag")
+                    && text.Contains("RemoveSelectedCollisionPolygon")
+                    && text.Contains("PointInPolygon"),
+                "MapEditorTool map preview can select, vertex-drag, and remove collision layout polygons in memory.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-layout-polygon-edit", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasCollisionLayoutPolygonSelected")
+                    && text.Contains("MapPreviewCanvasCollisionLayoutPolygonEdited")
+                    && text.Contains("Collision polygon")
+                    && text.Contains("Use Save to write the collision file"),
+                "MapEditorTool UI consumes collision layout polygon edits, keeps the current overlay hot, and defers disk writes to the Save collision action.");
             AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
                 text => text.Contains("LinksPreviewCanvas")
                     && text.Contains("DrawEdges")

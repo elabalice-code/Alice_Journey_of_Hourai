@@ -296,6 +296,8 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.PortalAddRequested += MapPreviewCanvasPortalAddRequested;
             _mapPreviewCanvas.PortalContextRequested += MapPreviewCanvasPortalContextRequested;
             _mapPreviewCanvas.CollisionLayoutEdited += MapPreviewCanvasCollisionLayoutEdited;
+            _mapPreviewCanvas.CollisionLayoutPolygonSelected += MapPreviewCanvasCollisionLayoutPolygonSelected;
+            _mapPreviewCanvas.CollisionLayoutPolygonEdited += MapPreviewCanvasCollisionLayoutPolygonEdited;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -454,6 +456,36 @@ namespace MapEditorTool.UI
             _viewModel.SetStatusText(
                 "Collision cell " + (e.Solid ? "painted" : "cleared") +
                 ": " + e.CellX + ", " + e.CellY +
+                ". Use Save to write the collision file.");
+            statusText.Text = _viewModel.Snapshot.StatusText;
+        }
+
+        private void MapPreviewCanvasCollisionLayoutPolygonSelected(object sender, CollisionLayoutPolygonSelectedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            _currentCollisionOverlay = e.Layout;
+            _currentCollisionOverlayTarget = e.Target;
+            _showCollisionOverlay = true;
+            _viewModel.SetStatusText(e.PolygonIndex >= 0
+                ? "Collision polygon selected: " + e.PolygonIndex
+                : "Collision polygon selection cleared.");
+            statusText.Text = _viewModel.Snapshot.StatusText;
+        }
+
+        private void MapPreviewCanvasCollisionLayoutPolygonEdited(object sender, CollisionLayoutPolygonEditedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            _currentCollisionOverlay = e.Layout;
+            _currentCollisionOverlayTarget = e.Target;
+            _showCollisionOverlay = true;
+            _viewModel.MarkSelectedMapEdited("Collision polygon");
+            _viewModel.SetStatusText(
+                e.EditName +
+                ": polygon " + e.PolygonIndex +
                 ". Use Save to write the collision file.");
             statusText.Text = _viewModel.Snapshot.StatusText;
         }
