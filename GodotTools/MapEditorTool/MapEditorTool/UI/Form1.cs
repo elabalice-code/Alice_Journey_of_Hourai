@@ -507,6 +507,8 @@ namespace MapEditorTool.UI
         {
             if (e == null || e.Selection == null)
                 _viewModel.SetStatusText("Tile collision selection cleared.");
+            else if (e.SelectionCount > 1)
+                _viewModel.SetStatusText("Tile collision selected: " + e.SelectionCount + " polygons; primary " + e.Selection.FormatSummary());
             else
                 _viewModel.SetStatusText("Tile collision selected: " + e.Selection.FormatSummary());
 
@@ -515,7 +517,7 @@ namespace MapEditorTool.UI
 
         private void MapPreviewCanvasTileCollisionEditCommitted(object sender, TileCollisionEditCommittedEventArgs e)
         {
-            if (e == null || e.Selection == null)
+            if (e == null || e.Edits == null || e.Edits.Count == 0)
                 return;
 
             var selectedMap = _viewModel.SelectedMap;
@@ -530,28 +532,40 @@ namespace MapEditorTool.UI
 
             try
             {
-                var selection = e.Selection;
-                var commit = new TileCollisionCommit
+                var commits = new List<TileCollisionCommit>();
+                var evictedTileSets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var edit in e.Edits)
                 {
-                    TileSetResPath = selection.TileSetResPath,
-                    LayerNodePath = selection.LayerNodePath,
-                    SourceId = selection.SourceId,
-                    AtlasX = selection.AtlasX,
-                    AtlasY = selection.AtlasY,
-                    CellX = selection.CellX,
-                    CellY = selection.CellY,
-                    OneWay = selection.OneWay,
-                    FromPoints = CloneGodotVectorPoints(e.FromPoints),
-                    ToPoints = CloneGodotVectorPoints(e.ToPoints)
-                };
+                    if (edit == null || edit.Selection == null)
+                        continue;
+                    var selection = edit.Selection;
+                    commits.Add(new TileCollisionCommit
+                    {
+                        TileSetResPath = selection.TileSetResPath,
+                        LayerNodePath = selection.LayerNodePath,
+                        SourceId = selection.SourceId,
+                        AtlasX = selection.AtlasX,
+                        AtlasY = selection.AtlasY,
+                        CellX = selection.CellX,
+                        CellY = selection.CellY,
+                        OneWay = selection.OneWay,
+                        FromPoints = CloneGodotVectorPoints(edit.FromPoints),
+                        ToPoints = CloneGodotVectorPoints(edit.ToPoints)
+                    });
+                    evictedTileSets.Add(selection.TileSetResPath);
+                }
+
+                if (commits.Count == 0)
+                    return;
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
-                var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, new List<TileCollisionCommit> { commit });
-                _mapPreviewCanvas.EvictTileSetCacheForResPath(selection.TileSetResPath);
+                var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, commits);
+                foreach (var tileSetResPath in evictedTileSets)
+                    _mapPreviewCanvas.EvictTileSetCacheForResPath(tileSetResPath);
                 _mapPreviewCanvas.ClearTileCollisionSelection();
                 e.Accepted = true;
                 _viewModel.MarkSelectedMapEdited("Tile collision");
-                _viewModel.SetStatusText("Tile collision vertex saved: " + result.Summary);
+                _viewModel.SetStatusText((commits.Count == 1 ? "Tile collision edit saved: " : "Tile collision group edit saved: ") + result.Summary);
             }
             catch (Exception ex)
             {
@@ -665,12 +679,16 @@ namespace MapEditorTool.UI
             var menu = new ContextMenuStrip();
             menu.Closed += delegate { menu.Dispose(); };
 
-            var setOneWay = new ToolStripMenuItem("Set One-Way") { Checked = e.Selection.OneWay };
-            setOneWay.Click += delegate { SetTileCollisionOneWay(e.Selection, true); };
+            var selections = e.Selections == null || e.Selections.Count == 0
+                ? new List<TileCollisionSelection> { e.Selection }
+                : e.Selections;
+
+            var setOneWay = new ToolStripMenuItem("Set One-Way") { Checked = selections.All(selection => selection.OneWay) };
+            setOneWay.Click += delegate { SetTileCollisionOneWay(selections, true); };
             menu.Items.Add(setOneWay);
 
-            var setSolid = new ToolStripMenuItem("Set Solid") { Checked = !e.Selection.OneWay };
-            setSolid.Click += delegate { SetTileCollisionOneWay(e.Selection, false); };
+            var setSolid = new ToolStripMenuItem("Set Solid") { Checked = selections.All(selection => !selection.OneWay) };
+            setSolid.Click += delegate { SetTileCollisionOneWay(selections, false); };
             menu.Items.Add(setSolid);
 
             if (canvas == null)
@@ -683,36 +701,51 @@ namespace MapEditorTool.UI
         {
             if (selection == null)
                 return;
+            SetTileCollisionOneWay(new List<TileCollisionSelection> { selection }, oneWay);
+        }
+
+        private void SetTileCollisionOneWay(List<TileCollisionSelection> selections, bool oneWay)
+        {
+            if (selections == null || selections.Count == 0)
+                return;
 
             var selectedMap = RequireSelectedMapForTileCollisionEvent(oneWay ? "set one-way" : "set solid");
             if (selectedMap == null)
                 return;
-            if (selection.OneWay == oneWay)
+            var changedSelections = selections.Where(selection => selection != null && selection.OneWay != oneWay).ToList();
+            if (changedSelections.Count == 0)
             {
-                _viewModel.SetStatusText("Tile collision already " + (oneWay ? "one-way." : "solid."));
+                _viewModel.SetStatusText("Tile collision selection already " + (oneWay ? "one-way." : "solid."));
                 ApplySnapshotToUi();
                 return;
             }
 
             try
             {
-                var commit = new TileCollisionCommit
+                var commits = new List<TileCollisionCommit>();
+                var evictedTileSets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var selection in changedSelections)
                 {
-                    TileSetResPath = selection.TileSetResPath,
-                    LayerNodePath = selection.LayerNodePath,
-                    SourceId = selection.SourceId,
-                    AtlasX = selection.AtlasX,
-                    AtlasY = selection.AtlasY,
-                    CellX = selection.CellX,
-                    CellY = selection.CellY,
-                    OneWay = oneWay,
-                    FromPoints = CloneGodotVectorPoints(selection.Points),
-                    ToPoints = CloneGodotVectorPoints(selection.Points)
-                };
+                    commits.Add(new TileCollisionCommit
+                    {
+                        TileSetResPath = selection.TileSetResPath,
+                        LayerNodePath = selection.LayerNodePath,
+                        SourceId = selection.SourceId,
+                        AtlasX = selection.AtlasX,
+                        AtlasY = selection.AtlasY,
+                        CellX = selection.CellX,
+                        CellY = selection.CellY,
+                        OneWay = oneWay,
+                        FromPoints = CloneGodotVectorPoints(selection.Points),
+                        ToPoints = CloneGodotVectorPoints(selection.Points)
+                    });
+                    evictedTileSets.Add(selection.TileSetResPath);
+                }
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
-                var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, new List<TileCollisionCommit> { commit });
-                _mapPreviewCanvas.EvictTileSetCacheForResPath(selection.TileSetResPath);
+                var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, commits);
+                foreach (var tileSetResPath in evictedTileSets)
+                    _mapPreviewCanvas.EvictTileSetCacheForResPath(tileSetResPath);
                 _mapPreviewCanvas.ClearTileCollisionSelection();
                 _viewModel.MarkSelectedMapEdited("Tile collision");
                 _viewModel.SetStatusText("Tile collision set " + (oneWay ? "one-way: " : "solid: ") + result.Summary);

@@ -386,6 +386,22 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("ApplyTileCollisionEdits")
                     && text.Contains("Tile collision set"),
                 "MapEditorTool UI routes TileSet collision one-way/solid context actions through TileCollisionExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-tileset-collision-group-edit", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("TileCollisionMarquee")
+                    && text.Contains("HitTestTileCollisionsInRectangle")
+                    && text.Contains("BeginTileCollisionGroupTransform")
+                    && text.Contains("ApplyTileCollisionGroupTransformDrag")
+                    && text.Contains("DrawTileCollisionGroupTransformGizmo")
+                    && text.Contains("TileCollisionGroupTransformDrag"),
+                "MapEditorTool map preview can multi-select TileSet collision polygons and move, rotate, or scale them as a group.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-commits-tileset-collision-group-edit", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("e.Edits")
+                    && text.Contains("new List<TileCollisionCommit>")
+                    && text.Contains("Tile collision group edit saved")
+                    && text.Contains("HashSet<string>")
+                    && text.Contains("SetTileCollisionOneWay(List<TileCollisionSelection>")
+                    && text.Contains("selections.All"),
+                "MapEditorTool UI batches TileSet collision group edits and one-way/solid updates through TileCollisionExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-collision-paint", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("CollisionLayoutEdited")
                     && text.Contains("ApplyCollisionPaintAt")
