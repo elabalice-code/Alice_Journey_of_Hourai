@@ -286,6 +286,16 @@ namespace MapEditorTool.ViewModel
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
+        public void MarkSelectedLinkEdited(string propertyName)
+        {
+            RefreshProjectSnapshot();
+            _snapshot.ProjectDirty = true;
+            _snapshot.StatusText = string.IsNullOrWhiteSpace(propertyName)
+                ? "Selected link updated."
+                : "Selected link updated: " + propertyName;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
         public void AddMap(MapDefinition map)
         {
             if (map == null)

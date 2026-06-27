@@ -134,6 +134,7 @@ namespace MapEditorTool.UI
 
             mapPropertyGrid.PropertyValueChanged += MapPropertyGridPropertyValueChanged;
             mapPropertyGrid.SelectedGridItemChanged += PropertyGridSelectedGridItemChanged;
+            linkPropertyGrid.PropertyValueChanged += LinkPropertyGridPropertyValueChanged;
             linkPropertyGrid.SelectedGridItemChanged += PropertyGridSelectedGridItemChanged;
         }
 
@@ -2811,7 +2812,7 @@ namespace MapEditorTool.UI
                 ReplaceItems(mapsList, snapshot.MapNames, snapshot.SelectedMapIndex);
                 ReplaceItems(linksList, snapshot.LinkNames, snapshot.SelectedLinkIndex);
                 mapPropertyGrid.SelectedObject = _viewModel.SelectedMap ?? (object)snapshot.MapState;
-                linkPropertyGrid.SelectedObject = snapshot.LinkState;
+                linkPropertyGrid.SelectedObject = _viewModel.SelectedLink ?? (object)snapshot.LinkState;
                 _mapPreviewCanvas.SetData(_viewModel.SelectedMap, TryResolveGodotRootForPreview());
                 _mapPreviewCanvas.SetCollisionOverlay(_currentCollisionOverlay, _currentCollisionOverlayTarget, _showCollisionOverlay);
                 _mapPreviewCanvas.SetCollisionEditorState(GetSelectedCollisionEditorMode(), GetSelectedCollisionEditorTool());
@@ -2975,6 +2976,18 @@ namespace MapEditorTool.UI
                 : e.ChangedItem.PropertyDescriptor.Name;
             _viewModel.MarkSelectedMapEdited(propertyName);
             TryWriteBackMapPropertyChange(propertyName, e);
+            ApplySnapshotToUi();
+        }
+
+        private void LinkPropertyGridPropertyValueChanged(object sender, PropertyValueChangedEventArgs e)
+        {
+            if (_isApplyingSnapshot)
+                return;
+
+            var propertyName = e == null || e.ChangedItem == null || e.ChangedItem.PropertyDescriptor == null
+                ? string.Empty
+                : e.ChangedItem.PropertyDescriptor.Name;
+            _viewModel.MarkSelectedLinkEdited(propertyName);
             ApplySnapshotToUi();
         }
 

@@ -604,6 +604,18 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("Deleted link")
                     && text.Contains("ProjectDirty"),
                 "MapEditorTool ViewModel owns pure project link add/remove state updates.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-link-property-editing", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("linkPropertyGrid.PropertyValueChanged += LinkPropertyGridPropertyValueChanged")
+                    && text.Contains("linkPropertyGrid.SelectedObject = _viewModel.SelectedLink")
+                    && text.Contains("LinkPropertyGridPropertyValueChanged")
+                    && text.Contains("MarkSelectedLinkEdited"),
+                "MapEditorTool link property grid edits the selected MapLink object and routes pure dirty-state updates through the ViewModel.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-link-property-editing", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("MarkSelectedLinkEdited")
+                    && text.Contains("Selected link updated")
+                    && text.Contains("RefreshProjectSnapshot")
+                    && text.Contains("ProjectDirty"),
+                "MapEditorTool ViewModel can mark selected link property edits as project-dirty state changes.");
             AddTextCheck(checks, godotRoot, "mapeditortool-model-propertygrid-metadata", "GodotTools/MapEditorTool/MapEditorTool/Models/MapProject.cs",
                 text => text.Contains("[DisplayName(\"Scene Path\")]")
                     && text.Contains("[Category(\"Textures\")]")
