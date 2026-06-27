@@ -18,6 +18,7 @@ using MapEditorTool.Executor.PortalEditing;
 using MapEditorTool.Executor.ProjectFile;
 using MapEditorTool.Executor.ResourcePath;
 using MapEditorTool.Executor.RuntimeVerify;
+using MapEditorTool.Executor.ScenePatch;
 using MapEditorTool.Executor.TileCollision;
 using MapEditorTool.Models;
 using MapEditorTool.ViewModel;
@@ -40,6 +41,7 @@ namespace MapEditorTool.UI
         private readonly ProjectFileExecutor _projectFileExecutor;
         private readonly ResourcePathExecutor _resourcePathExecutor;
         private readonly RuntimeVerificationExecutor _runtimeVerificationExecutor;
+        private readonly ScenePatchExecutor _scenePatchExecutor;
         private readonly TileCollisionExecutor _tileCollisionExecutor;
         private readonly UndoManager _undoManager;
         private readonly MapEditorShellViewModel _viewModel;
@@ -70,7 +72,8 @@ namespace MapEditorTool.UI
             _mapImportExecutor = new MapImportExecutor();
             _mapReportExecutor = new MapReportExecutor(_mapImportExecutor);
             _portalAnimationExecutor = new PortalAnimationExecutor();
-            _portalEditingExecutor = new PortalEditingExecutor(_mapCreationExecutor, new Executor.ScenePatch.ScenePatchExecutor(), _portalAnimationExecutor);
+            _scenePatchExecutor = new ScenePatchExecutor();
+            _portalEditingExecutor = new PortalEditingExecutor(_mapCreationExecutor, _scenePatchExecutor, _portalAnimationExecutor);
             _projectFileExecutor = new ProjectFileExecutor();
             _resourcePathExecutor = new ResourcePathExecutor();
             _runtimeVerificationExecutor = new RuntimeVerificationExecutor(_mapImportExecutor);
@@ -301,6 +304,7 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.PortalMoveCommitted += MapPreviewCanvasPortalMoveCommitted;
             _mapPreviewCanvas.PortalAddRequested += MapPreviewCanvasPortalAddRequested;
             _mapPreviewCanvas.PortalContextRequested += MapPreviewCanvasPortalContextRequested;
+            _mapPreviewCanvas.EntityMoveCommitted += MapPreviewCanvasEntityMoveCommitted;
             _mapPreviewCanvas.CollisionLayoutEdited += MapPreviewCanvasCollisionLayoutEdited;
             _mapPreviewCanvas.CollisionLayoutPolygonSelected += MapPreviewCanvasCollisionLayoutPolygonSelected;
             _mapPreviewCanvas.CollisionLayoutPolygonEdited += MapPreviewCanvasCollisionLayoutPolygonEdited;
@@ -346,6 +350,46 @@ namespace MapEditorTool.UI
                 e.Accepted = false;
                 _viewModel.SetStatusText("Move portal failed: " + ex.Message);
                 MessageBox.Show(this, ex.Message, "Move portal failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void MapPreviewCanvasEntityMoveCommitted(object sender, EntityMoveCommittedEventArgs e)
+        {
+            if (e == null || e.Entity == null)
+                return;
+
+            var selectedMap = _viewModel.SelectedMap;
+            if (selectedMap == null)
+                return;
+
+            if (string.IsNullOrWhiteSpace(e.Entity.NodePath))
+            {
+                e.Accepted = false;
+                _viewModel.SetStatusText("Move entity failed: entity has no node path.");
+                MessageBox.Show(this, "The selected entity has no node path to patch.", "Move entity failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ApplySnapshotToUi();
+                return;
+            }
+
+            try
+            {
+                var godotRoot = ResolveGodotRootForEditor();
+                var sceneFilePath = ResolveGodotResourcePath(godotRoot, selectedMap.ScenePath);
+                var result = _scenePatchExecutor.PatchNodePosition(sceneFilePath, e.Entity.NodePath, e.ToX, e.ToY);
+                e.Accepted = true;
+                _viewModel.MarkSelectedMapEdited("Entity position");
+                _viewModel.SetStatusText("Entity moved: " + FormatEntityName(e.Entity) + " (" + result.NewRawValue + ")");
+                mapPropertyGrid.Refresh();
+            }
+            catch (Exception ex)
+            {
+                e.Accepted = false;
+                _viewModel.SetStatusText("Move entity failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Move entity failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             finally
             {
@@ -1838,6 +1882,42 @@ namespace MapEditorTool.UI
                 return id;
 
             return (portal.NodePath ?? string.Empty).Trim();
+        }
+
+        private static string FormatEntityName(PlacedEntity entity)
+        {
+            if (entity == null)
+                return string.Empty;
+
+            var type = (entity.Type ?? string.Empty).Trim();
+            if (type.Length > 0)
+                return type;
+
+            var prefab = (entity.Prefab ?? string.Empty).Trim();
+            if (prefab.Length > 0)
+                return Path.GetFileNameWithoutExtension(prefab);
+
+            var nodePath = (entity.NodePath ?? string.Empty).Trim();
+            return nodePath.Length == 0 ? "Entity" : nodePath;
+        }
+
+        private static string ResolveGodotResourcePath(string godotRoot, string resourcePath)
+        {
+            resourcePath = (resourcePath ?? string.Empty).Trim();
+            if (resourcePath.Length == 0)
+                throw new ArgumentException("Resource path is empty.", "resourcePath");
+
+            if (Path.IsPathRooted(resourcePath))
+                return Path.GetFullPath(resourcePath);
+
+            if (string.IsNullOrWhiteSpace(godotRoot))
+                throw new ArgumentException("Godot root is empty.", "godotRoot");
+
+            var relative = resourcePath.StartsWith("res://", StringComparison.Ordinal)
+                ? resourcePath.Substring("res://".Length)
+                : resourcePath;
+            relative = relative.TrimStart('/', '\\').Replace('/', Path.DirectorySeparatorChar);
+            return Path.Combine(godotRoot, relative);
         }
 
         private MapDefinition FindMapById(string mapId)

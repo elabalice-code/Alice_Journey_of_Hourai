@@ -44,6 +44,7 @@ namespace MapEditorTool.UI
         private TileCollisionMarquee _tileCollisionMarquee;
         private TileCollisionGroupTransformDrag _tileCollisionGroupTransformDrag;
         private Portal _dragPortal;
+        private PlacedEntity _dragEntity;
         private float _dragFromX;
         private float _dragFromY;
         private float _dragOffsetX;
@@ -53,6 +54,7 @@ namespace MapEditorTool.UI
         public event EventHandler<PortalMoveCommittedEventArgs> PortalMoveCommitted;
         public event EventHandler<PortalAddRequestedEventArgs> PortalAddRequested;
         public event EventHandler<PortalContextRequestedEventArgs> PortalContextRequested;
+        public event EventHandler<EntityMoveCommittedEventArgs> EntityMoveCommitted;
         public event EventHandler<CollisionLayoutEditedEventArgs> CollisionLayoutEdited;
         public event EventHandler<CollisionLayoutPolygonSelectedEventArgs> CollisionLayoutPolygonSelected;
         public event EventHandler<CollisionLayoutPolygonEditedEventArgs> CollisionLayoutPolygonEdited;
@@ -159,6 +161,7 @@ namespace MapEditorTool.UI
             DrawCollisionOverlay(graphics, bounds);
             DrawGrid(graphics, bounds, _map.RoomWidth, _map.RoomHeight);
             DrawPortals(graphics, bounds);
+            DrawEntities(graphics, bounds);
             DrawSceneInfo(graphics, bounds);
             DrawEditorInfo(graphics, bounds);
         }
@@ -233,6 +236,9 @@ namespace MapEditorTool.UI
                     return;
                 }
 
+                if (HitTestEntity(e.Location) != null)
+                    return;
+
                 var screenWorld = ScreenToWorld(e.Location);
                 var addPosition = ClampToRoom(screenWorld.X, screenWorld.Y);
                 var args = new PortalAddRequestedEventArgs(addPosition.X, addPosition.Y);
@@ -245,12 +251,13 @@ namespace MapEditorTool.UI
             if (e.Button != MouseButtons.Left)
                 return;
 
-            var hit = HitTestPortal(e.Location);
+            var hit = HitTestDraggableMarker(e.Location);
             if (hit == null)
                 return;
 
             var world = ScreenToWorld(e.Location);
-            _dragPortal = hit;
+            _dragPortal = hit.Portal;
+            _dragEntity = hit.Entity;
             _dragFromX = hit.X;
             _dragFromY = hit.Y;
             _dragOffsetX = hit.X - world.X;
@@ -304,14 +311,21 @@ namespace MapEditorTool.UI
                 return;
             }
 
-            if (_dragPortal != null && e.Button == MouseButtons.Left)
+            if ((_dragPortal != null || _dragEntity != null) && e.Button == MouseButtons.Left)
             {
                 var world = ScreenToWorld(e.Location);
                 var clamped = ClampToRoom(world.X + _dragOffsetX, world.Y + _dragOffsetY);
-                if (Math.Abs(_dragPortal.X - clamped.X) > 0.01f || Math.Abs(_dragPortal.Y - clamped.Y) > 0.01f)
+                if (_dragPortal != null && (Math.Abs(_dragPortal.X - clamped.X) > 0.01f || Math.Abs(_dragPortal.Y - clamped.Y) > 0.01f))
                 {
                     _dragPortal.X = clamped.X;
                     _dragPortal.Y = clamped.Y;
+                    _dragMoved = true;
+                    Invalidate();
+                }
+                else if (_dragEntity != null && (Math.Abs(_dragEntity.X - clamped.X) > 0.01f || Math.Abs(_dragEntity.Y - clamped.Y) > 0.01f))
+                {
+                    _dragEntity.X = clamped.X;
+                    _dragEntity.Y = clamped.Y;
                     _dragMoved = true;
                     Invalidate();
                 }
@@ -320,13 +334,13 @@ namespace MapEditorTool.UI
             }
 
             if (e.Button == MouseButtons.None)
-                Cursor = HitTestPortal(e.Location) == null ? Cursors.Default : Cursors.Hand;
+                Cursor = HitTestDraggableMarker(e.Location) == null ? Cursors.Default : Cursors.Hand;
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
-            if (_dragPortal == null)
+            if (_dragPortal == null && _dragEntity == null)
                 Cursor = Cursors.Default;
         }
 
@@ -408,34 +422,53 @@ namespace MapEditorTool.UI
                 return;
             }
 
-            if (_dragPortal == null)
+            if (_dragPortal == null && _dragEntity == null)
                 return;
 
             var portal = _dragPortal;
+            var entity = _dragEntity;
             var fromX = _dragFromX;
             var fromY = _dragFromY;
-            var toX = portal.X;
-            var toY = portal.Y;
+            var toX = portal == null ? entity.X : portal.X;
+            var toY = portal == null ? entity.Y : portal.Y;
             var moved = _dragMoved;
 
             _dragPortal = null;
+            _dragEntity = null;
             _dragMoved = false;
             Capture = false;
-            Cursor = HitTestPortal(e.Location) == null ? Cursors.Default : Cursors.Hand;
+            Cursor = HitTestDraggableMarker(e.Location) == null ? Cursors.Default : Cursors.Hand;
 
             if (!moved)
                 return;
 
-            var args = new PortalMoveCommittedEventArgs(portal, fromX, fromY, toX, toY);
-            var handler = PortalMoveCommitted;
-            if (handler != null)
-                handler(this, args);
-
-            if (!args.Accepted)
+            if (portal != null)
             {
-                portal.X = fromX;
-                portal.Y = fromY;
-                Invalidate();
+                var args = new PortalMoveCommittedEventArgs(portal, fromX, fromY, toX, toY);
+                var handler = PortalMoveCommitted;
+                if (handler != null)
+                    handler(this, args);
+
+                if (!args.Accepted)
+                {
+                    portal.X = fromX;
+                    portal.Y = fromY;
+                    Invalidate();
+                }
+            }
+            else if (entity != null)
+            {
+                var args = new EntityMoveCommittedEventArgs(entity, fromX, fromY, toX, toY);
+                var handler = EntityMoveCommitted;
+                if (handler != null)
+                    handler(this, args);
+
+                if (!args.Accepted)
+                {
+                    entity.X = fromX;
+                    entity.Y = fromY;
+                    Invalidate();
+                }
             }
         }
 
@@ -1611,6 +1644,51 @@ namespace MapEditorTool.UI
             return null;
         }
 
+        private DraggableMarkerHit HitTestDraggableMarker(Point point)
+        {
+            if (_map == null)
+                return null;
+
+            var portal = HitTestPortal(point);
+            if (portal != null)
+                return new DraggableMarkerHit(portal, null, portal.X, portal.Y);
+
+            var entity = HitTestEntity(point);
+            if (entity != null)
+                return new DraggableMarkerHit(null, entity, entity.X, entity.Y);
+
+            return null;
+        }
+
+        private PlacedEntity HitTestEntity(Point point)
+        {
+            if (_map == null || _map.Entities == null)
+                return null;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            var scale = bounds.Width / roomPixelWidth;
+            var hitRadius = Math.Max(8f, 9f * scale);
+            var hitRadiusSquared = hitRadius * hitRadius;
+
+            for (var i = _map.Entities.Count - 1; i >= 0; i--)
+            {
+                var entity = _map.Entities[i];
+                if (entity == null)
+                    continue;
+
+                var x = bounds.X + entity.X * scale;
+                var y = bounds.Y + entity.Y * scale;
+                var dx = point.X - x;
+                var dy = point.Y - y;
+                if (dx * dx + dy * dy <= hitRadiusSquared)
+                    return entity;
+            }
+
+            return null;
+        }
+
         private PointF ScreenToWorld(Point point)
         {
             if (_map == null)
@@ -2316,6 +2394,41 @@ namespace MapEditorTool.UI
             }
         }
 
+        private void DrawEntities(Graphics graphics, RectangleF bounds)
+        {
+            if (_map == null || _map.Entities == null)
+                return;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var scale = bounds.Width / roomPixelWidth;
+            foreach (var entity in _map.Entities)
+            {
+                if (entity == null)
+                    continue;
+
+                var x = bounds.X + entity.X * scale;
+                var y = bounds.Y + entity.Y * scale;
+                var radius = Math.Max(5f, 7f * scale);
+                var marker = new RectangleF(x - radius, y - radius, radius * 2f, radius * 2f);
+                using (var brush = new SolidBrush(Color.FromArgb(230, 225, 145, 48)))
+                using (var outline = new Pen(Color.White, 2f))
+                {
+                    graphics.FillRectangle(brush, marker);
+                    graphics.DrawRectangle(outline, marker.X, marker.Y, marker.Width, marker.Height);
+                }
+
+                if (ReferenceEquals(_dragEntity, entity))
+                {
+                    using (var dragPen = new Pen(Color.FromArgb(230, 35, 40, 48), 2f))
+                        graphics.DrawRectangle(dragPen, marker.X - 3f, marker.Y - 3f, marker.Width + 6f, marker.Height + 6f);
+                }
+
+                var label = string.IsNullOrWhiteSpace(entity.Type) ? "Entity" : entity.Type;
+                using (var brush = new SolidBrush(Color.FromArgb(35, 40, 48)))
+                    graphics.DrawString(label, Font, brush, x + radius + 3f, y - radius);
+            }
+        }
+
         private void DrawSceneInfo(Graphics graphics, RectangleF bounds)
         {
             var lines = new List<string>
@@ -2323,7 +2436,8 @@ namespace MapEditorTool.UI
                 string.IsNullOrWhiteSpace(_map.DisplayName) ? _map.Id : _map.DisplayName,
                 _map.RoomWidth + " x " + _map.RoomHeight + " tiles",
                 "Layers: " + (_map.TileLayers == null ? 0 : _map.TileLayers.Count) +
-                    "  Portals: " + (_map.Portals == null ? 0 : _map.Portals.Count)
+                    "  Portals: " + (_map.Portals == null ? 0 : _map.Portals.Count) +
+                    "  Entities: " + (_map.Entities == null ? 0 : _map.Entities.Count)
             };
 
             if (string.IsNullOrWhiteSpace(_godotRoot))
@@ -2985,6 +3099,41 @@ namespace MapEditorTool.UI
         public float ToX { get; private set; }
         public float ToY { get; private set; }
         public bool Accepted { get; set; }
+    }
+
+    internal sealed class EntityMoveCommittedEventArgs : EventArgs
+    {
+        public EntityMoveCommittedEventArgs(PlacedEntity entity, float fromX, float fromY, float toX, float toY)
+        {
+            Entity = entity;
+            FromX = fromX;
+            FromY = fromY;
+            ToX = toX;
+            ToY = toY;
+        }
+
+        public PlacedEntity Entity { get; private set; }
+        public float FromX { get; private set; }
+        public float FromY { get; private set; }
+        public float ToX { get; private set; }
+        public float ToY { get; private set; }
+        public bool Accepted { get; set; }
+    }
+
+    internal sealed class DraggableMarkerHit
+    {
+        public DraggableMarkerHit(Portal portal, PlacedEntity entity, float x, float y)
+        {
+            Portal = portal;
+            Entity = entity;
+            X = x;
+            Y = y;
+        }
+
+        public Portal Portal { get; private set; }
+        public PlacedEntity Entity { get; private set; }
+        public float X { get; private set; }
+        public float Y { get; private set; }
     }
 
     internal sealed class PortalAddRequestedEventArgs : EventArgs

@@ -473,6 +473,20 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("ShowPortalTargetMenu")
                     && text.Contains("OnMouseDown"),
                 "MapEditorTool links preview graph can select map nodes, select link edges, and request portal target changes from mouse actions.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-entity-markers", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("DrawEntities")
+                    && text.Contains("HitTestEntity")
+                    && text.Contains("HitTestDraggableMarker")
+                    && text.Contains("EntityMoveCommitted")
+                    && text.Contains("PlacedEntity"),
+                "MapEditorTool map preview can draw imported entities and treat them as draggable scene markers.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-commits-entity-position", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasEntityMoveCommitted")
+                    && text.Contains("PatchNodePosition")
+                    && text.Contains("ScenePatchExecutor")
+                    && text.Contains("ResolveGodotResourcePath")
+                    && text.Contains("Entity moved"),
+                "MapEditorTool UI commits dragged entity positions through ScenePatchExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-links-preview-navigation", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("LinksPreviewCanvasMapSelected")
                     && text.Contains("LinksPreviewCanvasLinkSelected")
