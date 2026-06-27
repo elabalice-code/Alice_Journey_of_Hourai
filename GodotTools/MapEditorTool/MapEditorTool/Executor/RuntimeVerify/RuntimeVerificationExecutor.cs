@@ -357,12 +357,27 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("DrawCollisionPolygonTransformGizmo")
                     && text.Contains("CollisionPolygonTransformDrag"),
                 "MapEditorTool map preview can move, rotate, and scale selected collision layout polygons in memory.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-collision-edit-snapshots", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("BeforeLayout")
+                    && text.Contains("AfterLayout")
+                    && text.Contains("CloneCollisionLayoutData")
+                    && text.Contains("CollisionLayoutEditedEventArgs")
+                    && text.Contains("CollisionLayoutPolygonEditedEventArgs"),
+                "MapEditorTool map preview publishes before/after collision layout snapshots for UI undo handling.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-layout-polygon-edit", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("MapPreviewCanvasCollisionLayoutPolygonSelected")
                     && text.Contains("MapPreviewCanvasCollisionLayoutPolygonEdited")
                     && text.Contains("Collision polygon")
                     && text.Contains("Use Save to write the collision file"),
                 "MapEditorTool UI consumes collision layout polygon edits, keeps the current overlay hot, and defers disk writes to the Save collision action.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-collision-layout-undo-redo", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("UndoManager")
+                    && text.Contains("CollisionLayoutUndoAction")
+                    && text.Contains("UndoLastAction")
+                    && text.Contains("RedoLastAction")
+                    && text.Contains("PushCollisionLayoutUndo")
+                    && text.Contains("ApplyCollisionLayoutUndoSnapshot"),
+                "MapEditorTool UI can undo and redo current in-memory collision layout edits without writing external files.");
             AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
                 text => text.Contains("LinksPreviewCanvas")
                     && text.Contains("DrawEdges")

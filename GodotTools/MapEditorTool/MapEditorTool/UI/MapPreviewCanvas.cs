@@ -34,6 +34,7 @@ namespace MapEditorTool.UI
         private bool _collisionPolygonVertexDragging;
         private int _collisionPolygonDragVertexIndex;
         private bool _collisionPolygonVertexDragMoved;
+        private CollisionLayoutData _collisionPolygonVertexDragBefore;
         private CollisionPolygonTransformDrag _collisionPolygonTransformDrag;
         private Portal _dragPortal;
         private float _dragFromX;
@@ -261,11 +262,12 @@ namespace MapEditorTool.UI
                 var edited = _collisionPolygonTransformDrag.Moved;
                 var editName = _collisionPolygonTransformDrag.EditName;
                 var polygonIndex = _collisionPolygonTransformDrag.PolygonIndex;
+                var beforeLayout = _collisionPolygonTransformDrag.BeforeLayout;
                 _collisionPolygonTransformDrag = null;
                 Capture = false;
                 Cursor = Cursors.Default;
                 if (edited)
-                    RaiseCollisionPolygonEdited(editName, polygonIndex);
+                    RaiseCollisionPolygonEdited(editName, polygonIndex, beforeLayout);
                 return;
             }
 
@@ -279,7 +281,8 @@ namespace MapEditorTool.UI
                 Capture = false;
                 Cursor = Cursors.Default;
                 if (vertexMoved)
-                    RaiseCollisionPolygonEdited("Vertex moved", polygonIndex);
+                    RaiseCollisionPolygonEdited("Vertex moved", polygonIndex, _collisionPolygonVertexDragBefore);
+                _collisionPolygonVertexDragBefore = null;
                 return;
             }
 
@@ -387,6 +390,7 @@ namespace MapEditorTool.UI
                     _collisionPolygonVertexDragging = true;
                     _collisionPolygonDragVertexIndex = vertexIndex;
                     _collisionPolygonVertexDragMoved = false;
+                    _collisionPolygonVertexDragBefore = CloneCollisionLayoutData(_collisionLayout);
                     Capture = true;
                     Cursor = Cursors.SizeAll;
                     return true;
@@ -435,6 +439,7 @@ namespace MapEditorTool.UI
             _collisionPolygonTransformDrag = new CollisionPolygonTransformDrag(
                 hit.Kind,
                 _selectedCollisionPolygonIndex,
+                CloneCollisionLayoutData(_collisionLayout),
                 ClonePolygonPoints(polygon),
                 GetCollisionPolygonBounds(polygon),
                 startMouseWorld,
@@ -550,11 +555,12 @@ namespace MapEditorTool.UI
             if (!IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
                 return;
 
+            var beforeLayout = CloneCollisionLayoutData(_collisionLayout);
             var removedIndex = _selectedCollisionPolygonIndex;
             _collisionLayout.Polygons.RemoveAt(removedIndex);
             _selectedCollisionPolygonIndex = -1;
             Invalidate();
-            RaiseCollisionPolygonEdited("Polygon removed", removedIndex);
+            RaiseCollisionPolygonEdited("Polygon removed", removedIndex, beforeLayout);
             RaiseCollisionPolygonSelected(-1);
         }
 
@@ -585,11 +591,11 @@ namespace MapEditorTool.UI
                 handler(this, new CollisionLayoutPolygonSelectedEventArgs(_collisionLayout, _collisionTarget, polygonIndex));
         }
 
-        private void RaiseCollisionPolygonEdited(string editName, int polygonIndex)
+        private void RaiseCollisionPolygonEdited(string editName, int polygonIndex, CollisionLayoutData beforeLayout)
         {
             var handler = CollisionLayoutPolygonEdited;
             if (handler != null)
-                handler(this, new CollisionLayoutPolygonEditedEventArgs(_collisionLayout, _collisionTarget, polygonIndex, editName));
+                handler(this, new CollisionLayoutPolygonEditedEventArgs(_collisionLayout, _collisionTarget, polygonIndex, editName, beforeLayout, CloneCollisionLayoutData(_collisionLayout)));
         }
 
         private void ApplyCollisionPaintAt(Point location)
@@ -611,12 +617,13 @@ namespace MapEditorTool.UI
             if (_collisionLayout.Solid[index] == _collisionPaintValue)
                 return;
 
+            var beforeLayout = CloneCollisionLayoutData(_collisionLayout);
             _collisionLayout.Solid[index] = _collisionPaintValue;
             Invalidate();
 
             var handler = CollisionLayoutEdited;
             if (handler != null)
-                handler(this, new CollisionLayoutEditedEventArgs(_collisionLayout, _collisionTarget, x, y, _collisionPaintValue));
+                handler(this, new CollisionLayoutEditedEventArgs(_collisionLayout, _collisionTarget, x, y, _collisionPaintValue, beforeLayout, CloneCollisionLayoutData(_collisionLayout)));
         }
 
         private bool TryGetCollisionCell(Point location, out int x, out int y)
@@ -928,6 +935,28 @@ namespace MapEditorTool.UI
                     clone.Add(new GodotVector2Data());
                 else
                     clone.Add(new GodotVector2Data { X = point.X, Y = point.Y });
+            }
+
+            return clone;
+        }
+
+        private static CollisionLayoutData CloneCollisionLayoutData(CollisionLayoutData layout)
+        {
+            if (layout == null)
+                return null;
+
+            var clone = new CollisionLayoutData
+            {
+                RoomWidth = layout.RoomWidth,
+                RoomHeight = layout.RoomHeight,
+                Solid = layout.Solid == null ? new bool[0] : (bool[])layout.Solid.Clone(),
+                Polygons = new List<List<GodotVector2Data>>()
+            };
+
+            if (layout.Polygons != null)
+            {
+                foreach (var polygon in layout.Polygons)
+                    clone.Polygons.Add(polygon == null ? new List<GodotVector2Data>() : ClonePolygonPoints(polygon));
             }
 
             return clone;
@@ -1587,6 +1616,7 @@ namespace MapEditorTool.UI
         public CollisionPolygonTransformDrag(
             CollisionPolygonTransformKind kind,
             int polygonIndex,
+            CollisionLayoutData beforeLayout,
             List<GodotVector2Data> startPoints,
             CollisionPolygonBounds startBounds,
             PointF startMouseWorld,
@@ -1594,6 +1624,7 @@ namespace MapEditorTool.UI
         {
             Kind = kind;
             PolygonIndex = polygonIndex;
+            BeforeLayout = beforeLayout;
             StartPoints = startPoints;
             StartBounds = startBounds;
             StartMouseWorld = startMouseWorld;
@@ -1602,6 +1633,7 @@ namespace MapEditorTool.UI
 
         public CollisionPolygonTransformKind Kind { get; private set; }
         public int PolygonIndex { get; private set; }
+        public CollisionLayoutData BeforeLayout { get; private set; }
         public List<GodotVector2Data> StartPoints { get; private set; }
         public CollisionPolygonBounds StartBounds { get; private set; }
         public PointF StartMouseWorld { get; private set; }
@@ -1623,13 +1655,22 @@ namespace MapEditorTool.UI
 
     internal sealed class CollisionLayoutEditedEventArgs : EventArgs
     {
-        public CollisionLayoutEditedEventArgs(CollisionLayoutData layout, CollisionLayoutTarget target, int cellX, int cellY, bool solid)
+        public CollisionLayoutEditedEventArgs(
+            CollisionLayoutData layout,
+            CollisionLayoutTarget target,
+            int cellX,
+            int cellY,
+            bool solid,
+            CollisionLayoutData beforeLayout,
+            CollisionLayoutData afterLayout)
         {
             Layout = layout;
             Target = target;
             CellX = cellX;
             CellY = cellY;
             Solid = solid;
+            BeforeLayout = beforeLayout;
+            AfterLayout = afterLayout;
         }
 
         public CollisionLayoutData Layout { get; private set; }
@@ -1637,6 +1678,8 @@ namespace MapEditorTool.UI
         public int CellX { get; private set; }
         public int CellY { get; private set; }
         public bool Solid { get; private set; }
+        public CollisionLayoutData BeforeLayout { get; private set; }
+        public CollisionLayoutData AfterLayout { get; private set; }
     }
 
     internal sealed class CollisionLayoutPolygonSelectedEventArgs : EventArgs
@@ -1655,18 +1698,28 @@ namespace MapEditorTool.UI
 
     internal sealed class CollisionLayoutPolygonEditedEventArgs : EventArgs
     {
-        public CollisionLayoutPolygonEditedEventArgs(CollisionLayoutData layout, CollisionLayoutTarget target, int polygonIndex, string editName)
+        public CollisionLayoutPolygonEditedEventArgs(
+            CollisionLayoutData layout,
+            CollisionLayoutTarget target,
+            int polygonIndex,
+            string editName,
+            CollisionLayoutData beforeLayout,
+            CollisionLayoutData afterLayout)
         {
             Layout = layout;
             Target = target;
             PolygonIndex = polygonIndex;
             EditName = editName ?? string.Empty;
+            BeforeLayout = beforeLayout;
+            AfterLayout = afterLayout;
         }
 
         public CollisionLayoutData Layout { get; private set; }
         public CollisionLayoutTarget Target { get; private set; }
         public int PolygonIndex { get; private set; }
         public string EditName { get; private set; }
+        public CollisionLayoutData BeforeLayout { get; private set; }
+        public CollisionLayoutData AfterLayout { get; private set; }
     }
 
     internal sealed class PortalMoveCommittedEventArgs : EventArgs

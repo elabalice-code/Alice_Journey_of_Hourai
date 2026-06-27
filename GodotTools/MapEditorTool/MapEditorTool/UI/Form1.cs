@@ -39,6 +39,7 @@ namespace MapEditorTool.UI
         private readonly ProjectFileExecutor _projectFileExecutor;
         private readonly ResourcePathExecutor _resourcePathExecutor;
         private readonly RuntimeVerificationExecutor _runtimeVerificationExecutor;
+        private readonly UndoManager _undoManager;
         private readonly MapEditorShellViewModel _viewModel;
         private readonly MapPreviewCanvas _mapPreviewCanvas;
         private readonly LinksPreviewCanvas _linksPreviewCanvas;
@@ -47,11 +48,13 @@ namespace MapEditorTool.UI
         private bool _showCollisionOverlay;
         private bool _isDeveloperCommentBoxOpen;
         private bool _isApplyingSnapshot;
+        private bool _isReplayingUndo;
 
         public Form1()
         {
             InitializeComponent();
             _viewModel = MapEditorShellViewModel.CreateShellDefaults();
+            _undoManager = new UndoManager();
             _mapPreviewCanvas = new MapPreviewCanvas();
             _linksPreviewCanvas = new LinksPreviewCanvas();
 
@@ -452,6 +455,7 @@ namespace MapEditorTool.UI
             _currentCollisionOverlay = e.Layout;
             _currentCollisionOverlayTarget = e.Target;
             _showCollisionOverlay = true;
+            PushCollisionLayoutUndo("Collision cell edit", e.Target, e.BeforeLayout, e.AfterLayout);
             _viewModel.MarkSelectedMapEdited("Collision layout");
             _viewModel.SetStatusText(
                 "Collision cell " + (e.Solid ? "painted" : "cleared") +
@@ -482,6 +486,7 @@ namespace MapEditorTool.UI
             _currentCollisionOverlay = e.Layout;
             _currentCollisionOverlayTarget = e.Target;
             _showCollisionOverlay = true;
+            PushCollisionLayoutUndo(e.EditName, e.Target, e.BeforeLayout, e.AfterLayout);
             _viewModel.MarkSelectedMapEdited("Collision polygon");
             _viewModel.SetStatusText(
                 e.EditName +
@@ -871,6 +876,14 @@ namespace MapEditorTool.UI
             {
                 SetViewModeComboIndex(0);
             }
+            else if (string.Equals(item.Name, "menu.edit.undo", StringComparison.Ordinal))
+            {
+                UndoLastAction();
+            }
+            else if (string.Equals(item.Name, "menu.edit.redo", StringComparison.Ordinal))
+            {
+                RedoLastAction();
+            }
             else if (string.Equals(item.Name, "menu.view.collision", StringComparison.Ordinal))
             {
                 SetViewModeComboIndex(1);
@@ -936,6 +949,7 @@ namespace MapEditorTool.UI
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
                 var project = _mapImportExecutor.ImportFromGodotRoot(godotRoot);
                 _viewModel.LoadImportedProject(project, godotRoot);
+                _undoManager.Clear();
             }
             catch (Exception ex)
             {
@@ -1101,6 +1115,7 @@ namespace MapEditorTool.UI
                 {
                     var foreground = _foregroundTextureCollisionExecutor.BuildAndWriteLayout(godotRoot, selected);
                     SetCollisionOverlay(foreground.Layout, target, true);
+                    _undoManager.Clear();
                     _viewModel.SetStatusText("Initialized foreground texture collision: " + foreground.Summary);
                 }
                 else
@@ -1108,6 +1123,7 @@ namespace MapEditorTool.UI
                     var layout = MapEditorTool.Executor.MapCreation.CollisionLayoutData.Create(selected.RoomWidth, selected.RoomHeight);
                     var saved = _collisionLayoutExecutor.SaveLayout(godotRoot, selected, target, layout);
                     SetCollisionOverlay(saved.Layout, target, true);
+                    _undoManager.Clear();
                     _viewModel.SetStatusText("Initialized tile collision: " + saved.Summary);
                 }
             }
@@ -1134,6 +1150,7 @@ namespace MapEditorTool.UI
                 var target = GetSelectedCollisionLayoutTarget();
                 var loaded = _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, false);
                 SetCollisionOverlay(loaded.Layout, target, true);
+                _undoManager.Clear();
                 _viewModel.SetStatusText("Loaded collision layout: " + loaded.Summary);
                 ShowReportDialog(
                     "Load Collision Layout",
@@ -1173,6 +1190,7 @@ namespace MapEditorTool.UI
                     : _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, true).Layout;
                 var saved = _collisionLayoutExecutor.SaveLayout(godotRoot, selected, target, layoutToSave);
                 SetCollisionOverlay(saved.Layout, target, true);
+                _undoManager.Clear();
                 _viewModel.SetStatusText("Saved collision layout: " + saved.Summary);
             }
             catch (Exception ex)
@@ -1186,14 +1204,90 @@ namespace MapEditorTool.UI
             }
         }
 
+        private void PushCollisionLayoutUndo(
+            string name,
+            CollisionLayoutTarget target,
+            MapEditorTool.Executor.MapCreation.CollisionLayoutData beforeLayout,
+            MapEditorTool.Executor.MapCreation.CollisionLayoutData afterLayout)
+        {
+            if (_isReplayingUndo)
+                return;
+            if (beforeLayout == null || afterLayout == null)
+                return;
+
+            _undoManager.Push(new CollisionLayoutUndoAction(
+                string.IsNullOrWhiteSpace(name) ? "Collision layout edit" : name,
+                target,
+                beforeLayout,
+                afterLayout,
+                ApplyCollisionLayoutUndoSnapshot));
+        }
+
+        private void UndoLastAction()
+        {
+            if (!_undoManager.CanUndo)
+            {
+                _viewModel.SetStatusText("Undo skipped: no action is available.");
+                return;
+            }
+
+            _isReplayingUndo = true;
+            try
+            {
+                var name = _undoManager.PeekUndoName();
+                if (_undoManager.TryUndo())
+                    _viewModel.SetStatusText("Undone: " + name + ". Use Save to write the collision file.");
+            }
+            finally
+            {
+                _isReplayingUndo = false;
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void RedoLastAction()
+        {
+            if (!_undoManager.CanRedo)
+            {
+                _viewModel.SetStatusText("Redo skipped: no action is available.");
+                return;
+            }
+
+            _isReplayingUndo = true;
+            try
+            {
+                var name = _undoManager.PeekRedoName();
+                if (_undoManager.TryRedo())
+                    _viewModel.SetStatusText("Redone: " + name + ". Use Save to write the collision file.");
+            }
+            finally
+            {
+                _isReplayingUndo = false;
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void ApplyCollisionLayoutUndoSnapshot(
+            CollisionLayoutTarget target,
+            MapEditorTool.Executor.MapCreation.CollisionLayoutData layout)
+        {
+            SetCollisionOverlay(CloneCollisionLayoutData(layout), target, true);
+            _viewModel.MarkSelectedMapEdited("Collision layout undo");
+        }
+
         private void MapToolSelectionChanged(object sender, EventArgs e)
         {
             if (_isApplyingSnapshot)
                 return;
 
-            ApplyCollisionToolButtonSelection(sender as ToolStripItem);
-            ApplyCollisionModeSelectionToMap();
-            RefreshCollisionOverlayFromToolbar(false);
+            var selectedToolItem = sender as ToolStripItem;
+            var isToolButton = selectedToolItem != null && IsCollisionToolButton(selectedToolItem.Name);
+            ApplyCollisionToolButtonSelection(selectedToolItem);
+            if (!isToolButton)
+            {
+                ApplyCollisionModeSelectionToMap();
+                RefreshCollisionOverlayFromToolbar(false);
+            }
             UpdateCollisionEditorState();
             ApplySnapshotToUi();
         }
@@ -1320,6 +1414,7 @@ namespace MapEditorTool.UI
                 var target = GetSelectedCollisionLayoutTarget();
                 var loaded = _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, ensureDefaultPath);
                 SetCollisionOverlay(loaded.Layout, target, true);
+                _undoManager.Clear();
             }
             catch
             {
@@ -1357,6 +1452,8 @@ namespace MapEditorTool.UI
         {
             _currentCollisionOverlay = null;
             _showCollisionOverlay = false;
+            if (!_isReplayingUndo)
+                _undoManager.Clear();
         }
 
         private MapEditorTool.Models.MapDefinition RequireSelectedMap(string actionName)
@@ -1392,6 +1489,43 @@ namespace MapEditorTool.UI
             }
 
             return count;
+        }
+
+        private static MapEditorTool.Executor.MapCreation.CollisionLayoutData CloneCollisionLayoutData(
+            MapEditorTool.Executor.MapCreation.CollisionLayoutData layout)
+        {
+            if (layout == null)
+                return null;
+
+            var clone = new MapEditorTool.Executor.MapCreation.CollisionLayoutData
+            {
+                RoomWidth = layout.RoomWidth,
+                RoomHeight = layout.RoomHeight,
+                Solid = layout.Solid == null ? new bool[0] : (bool[])layout.Solid.Clone(),
+                Polygons = new List<List<MapEditorTool.Executor.MapCreation.GodotVector2Data>>()
+            };
+
+            if (layout.Polygons != null)
+            {
+                foreach (var polygon in layout.Polygons)
+                {
+                    var polygonClone = new List<MapEditorTool.Executor.MapCreation.GodotVector2Data>();
+                    if (polygon != null)
+                    {
+                        foreach (var point in polygon)
+                        {
+                            if (point == null)
+                                polygonClone.Add(new MapEditorTool.Executor.MapCreation.GodotVector2Data());
+                            else
+                                polygonClone.Add(new MapEditorTool.Executor.MapCreation.GodotVector2Data { X = point.X, Y = point.Y });
+                        }
+                    }
+
+                    clone.Polygons.Add(polygonClone);
+                }
+            }
+
+            return clone;
         }
 
         private static string FormatPortalName(Portal portal)
@@ -1488,6 +1622,7 @@ namespace MapEditorTool.UI
         private void NewProject()
         {
             _viewModel.CreateNewProject();
+            _undoManager.Clear();
         }
 
         private void OpenProject()
@@ -1504,6 +1639,7 @@ namespace MapEditorTool.UI
                 {
                     var project = _projectFileExecutor.LoadProject(dialog.FileName);
                     _viewModel.LoadProjectFile(project, dialog.FileName);
+                    _undoManager.Clear();
                 }
                 catch (Exception ex)
                 {
@@ -1779,6 +1915,7 @@ namespace MapEditorTool.UI
                 _mapPreviewCanvas.SetCollisionOverlay(_currentCollisionOverlay, _currentCollisionOverlayTarget, _showCollisionOverlay);
                 _mapPreviewCanvas.SetCollisionEditorState(GetSelectedCollisionEditorMode(), GetSelectedCollisionEditorTool());
                 _linksPreviewCanvas.SetData(_viewModel.CurrentProject, _viewModel.SelectedMap, _viewModel.SelectedLink);
+                ApplyUndoStateToMenu();
                 statusText.Text = snapshot.StatusText;
             }
             finally
@@ -1809,6 +1946,23 @@ namespace MapEditorTool.UI
             finally
             {
                 listBox.EndUpdate();
+            }
+        }
+
+        private void ApplyUndoStateToMenu()
+        {
+            var undo = FindToolStripItem(mainMenu.Items, "menu.edit.undo");
+            if (undo != null)
+            {
+                undo.Enabled = _undoManager.CanUndo;
+                undo.Text = _undoManager.CanUndo ? "Undo: " + _undoManager.PeekUndoName() : "Undo";
+            }
+
+            var redo = FindToolStripItem(mainMenu.Items, "menu.edit.redo");
+            if (redo != null)
+            {
+                redo.Enabled = _undoManager.CanRedo;
+                redo.Text = _undoManager.CanRedo ? "Redo: " + _undoManager.PeekRedoName() : "Redo";
             }
         }
 
@@ -1915,6 +2069,118 @@ namespace MapEditorTool.UI
             var text = string.IsNullOrWhiteSpace(control.Text) ? "(no text)" : control.Text;
             var name = string.IsNullOrWhiteSpace(control.Name) ? "(no name)" : control.Name;
             return string.Format("[{0}] {1} \"{2}\" ({3})", index, control.GetType().Name, text, name);
+        }
+
+        private interface IUndoableAction
+        {
+            string Name { get; }
+            void Undo();
+            void Redo();
+        }
+
+        private sealed class UndoManager
+        {
+            private readonly Stack<IUndoableAction> _undo;
+            private readonly Stack<IUndoableAction> _redo;
+
+            public UndoManager()
+            {
+                _undo = new Stack<IUndoableAction>();
+                _redo = new Stack<IUndoableAction>();
+            }
+
+            public bool CanUndo
+            {
+                get { return _undo.Count > 0; }
+            }
+
+            public bool CanRedo
+            {
+                get { return _redo.Count > 0; }
+            }
+
+            public void Clear()
+            {
+                _undo.Clear();
+                _redo.Clear();
+            }
+
+            public string PeekUndoName()
+            {
+                return _undo.Count == 0 ? string.Empty : _undo.Peek().Name;
+            }
+
+            public string PeekRedoName()
+            {
+                return _redo.Count == 0 ? string.Empty : _redo.Peek().Name;
+            }
+
+            public void Push(IUndoableAction action)
+            {
+                if (action == null)
+                    return;
+
+                _undo.Push(action);
+                _redo.Clear();
+            }
+
+            public bool TryUndo()
+            {
+                if (!CanUndo)
+                    return false;
+
+                var action = _undo.Pop();
+                action.Undo();
+                _redo.Push(action);
+                return true;
+            }
+
+            public bool TryRedo()
+            {
+                if (!CanRedo)
+                    return false;
+
+                var action = _redo.Pop();
+                action.Redo();
+                _undo.Push(action);
+                return true;
+            }
+        }
+
+        private sealed class CollisionLayoutUndoAction : IUndoableAction
+        {
+            private readonly CollisionLayoutTarget _target;
+            private readonly MapEditorTool.Executor.MapCreation.CollisionLayoutData _before;
+            private readonly MapEditorTool.Executor.MapCreation.CollisionLayoutData _after;
+            private readonly Action<CollisionLayoutTarget, MapEditorTool.Executor.MapCreation.CollisionLayoutData> _apply;
+
+            public CollisionLayoutUndoAction(
+                string name,
+                CollisionLayoutTarget target,
+                MapEditorTool.Executor.MapCreation.CollisionLayoutData before,
+                MapEditorTool.Executor.MapCreation.CollisionLayoutData after,
+                Action<CollisionLayoutTarget, MapEditorTool.Executor.MapCreation.CollisionLayoutData> apply)
+            {
+                Name = name ?? string.Empty;
+                _target = target;
+                _before = CloneCollisionLayoutData(before);
+                _after = CloneCollisionLayoutData(after);
+                _apply = apply;
+            }
+
+            public string Name { get; private set; }
+
+            public void Undo()
+            {
+                if (_apply != null)
+                    _apply(_target, CloneCollisionLayoutData(_before));
+            }
+
+            public void Redo()
+            {
+                if (_apply != null)
+                    _apply(_target, CloneCollisionLayoutData(_after));
+            }
         }
     }
 }
