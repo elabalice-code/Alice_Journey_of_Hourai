@@ -571,6 +571,19 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("Scene portal target updated")
                     && text.Contains("PortalTargetSnapshot"),
                 "MapEditorTool UI can undo and redo portal target changes while writing scene portal target data through the executor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-executor-portal-animation-properties", "GodotTools/MapEditorTool/MapEditorTool/Executor/PortalEditing/PortalEditingExecutor.cs",
+                text => text.Contains("AnimationVideoPath")
+                    && text.Contains("AnimationFrameCount")
+                    && text.Contains("ImportPortalVideoAndPatchScene")
+                    && text.Contains("AnimationFramesDir")
+                    && text.Contains("PatchPortalAnimation(")
+                    && text.Contains("ComputePortalAnimFps")
+                    && text.Contains("AnimationFps")
+                    && text.Contains("AnimationDurationSec")
+                    && text.Contains("PatchPortalAnimationSettings")
+                    && text.Contains("KeyoutTolerance")
+                    && text.Contains("ReapplyKeyout"),
+                "MapEditorTool PortalEditingExecutor writes portal animation video imports, manual frame directories, settings, and keyout changes through Executor-owned side effects.");
             AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-link-navigation-state", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
                 text => text.Contains("SelectMapById")
                     && text.Contains("SelectLink(MapLink link)")

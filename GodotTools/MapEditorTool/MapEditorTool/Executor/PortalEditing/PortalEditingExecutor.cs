@@ -114,6 +114,17 @@ namespace MapEditorTool.Executor.PortalEditing
                 return BuildResult(sceneFilePath, portal, "importedPortalAnimation=" + import.Summary);
             }
 
+            if (string.Equals(propertyName, "AnimationFramesDir", StringComparison.Ordinal))
+            {
+                _scenePatchExecutor.PatchPortalAnimation(
+                    sceneFilePath,
+                    portal.NodePath,
+                    portal.AnimationFramesDir,
+                    PortalAnimationExecutor.ComputePortalAnimFps(portal),
+                    Math.Max(0.001f, portal.Upscale));
+                return BuildResult(sceneFilePath, portal, "patchedPortalAnimationDirectory=" + portal.NodePath);
+            }
+
             if (string.Equals(propertyName, "AnimationFps", StringComparison.Ordinal) ||
                 string.Equals(propertyName, "AnimationDurationSec", StringComparison.Ordinal) ||
                 string.Equals(propertyName, "Upscale", StringComparison.Ordinal))
