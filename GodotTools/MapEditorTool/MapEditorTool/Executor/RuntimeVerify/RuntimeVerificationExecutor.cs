@@ -299,14 +299,25 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PortalTargetMapEditor")
                     && text.Contains("PortalTargetAreaEditor")
                     && text.Contains("PortalEditingExecutor")
-                    && text.Contains("PropertyValueChanged"),
-                "MapEditorTool UI restores Portal PropertyGrid collection editing while delegating side effects to PortalEditingExecutor.");
+                    && text.Contains("PropertyValueChanged")
+                    && text.Contains("Task.Run")
+                    && text.Contains("RunOnUiThread")
+                    && text.Contains("RefreshEditorUi"),
+                "MapEditorTool UI restores Portal PropertyGrid collection editing, runs long portal writebacks off the UI thread, and delegates side effects to PortalEditingExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-refreshes-after-portal-property-edit", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("RefreshUi = RefreshAfterPortalPropertyEdit")
+                    && text.Contains("RefreshAfterPortalPropertyEdit")
+                    && text.Contains("MarkSelectedMapEdited(\"Portal property\")")
+                    && text.Contains("EvictImageCache")
+                    && text.Contains("ApplySnapshotToUi"),
+                "MapEditorTool UI refreshes project dirty state, preview image cache, and snapshots after asynchronous portal property writes.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("MapPreviewCanvas")
                     && text.Contains("DrawTileLayers")
                     && text.Contains("DrawPortals")
                     && text.Contains("DrawCollisionOverlay")
                     && text.Contains("GodotTileSetLoader")
+                    && text.Contains("EvictImageCache")
                     && text.Contains("SetData"),
                 "MapEditorTool UI has a real read-only map preview canvas for imported maps, tile layers, textures, portals, and collision overlays.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-portal-drag", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",

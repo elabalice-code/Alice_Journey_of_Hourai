@@ -111,6 +111,14 @@ namespace MapEditorTool.UI
                 _tileSetCache.Remove(absolute);
         }
 
+        public void EvictImageCache()
+        {
+            foreach (var image in _imageCache.Values)
+                image.Dispose();
+            _imageCache.Clear();
+            Invalidate();
+        }
+
         public void ClearTileCollisionSelection()
         {
             ClearTileCollisionSelectionState();

@@ -151,11 +151,22 @@ namespace MapEditorTool.UI
                     if (!_isApplyingSnapshot)
                         statusText.Text = status;
                 },
+                RefreshUi = RefreshAfterPortalPropertyEdit,
                 PortalEditingExecutor = _portalEditingExecutor
             };
 
             TypeDescriptor.AddProvider(new PortalEditorTypeDescriptionProvider(typeof(MapDefinition), context), typeof(MapDefinition));
             TypeDescriptor.AddProvider(new PortalEditorTypeDescriptionProvider(typeof(Portal), context), typeof(Portal));
+        }
+
+        private void RefreshAfterPortalPropertyEdit()
+        {
+            if (IsDisposed)
+                return;
+
+            _viewModel.MarkSelectedMapEdited("Portal property");
+            _mapPreviewCanvas.EvictImageCache();
+            ApplySnapshotToUi();
         }
 
         private void RegisterResourcePathEditorProvider(Type type)

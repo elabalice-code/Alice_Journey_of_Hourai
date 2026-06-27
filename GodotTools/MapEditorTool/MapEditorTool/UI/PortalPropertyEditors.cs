@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.Drawing.Design;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Windows.Forms.Design;
 using MapEditorTool.Executor.PortalEditing;
@@ -17,6 +18,7 @@ namespace MapEditorTool.UI
         public Func<MapProject> ResolveProject { get; set; }
         public Func<MapDefinition> ResolveSelectedMap { get; set; }
         public Action<string> ReportStatus { get; set; }
+        public Action RefreshUi { get; set; }
         public PortalEditingExecutor PortalEditingExecutor { get; set; }
 
         public string GetGodotRoot()
@@ -38,6 +40,12 @@ namespace MapEditorTool.UI
         {
             if (ReportStatus != null)
                 ReportStatus(status ?? string.Empty);
+        }
+
+        public void RefreshEditorUi()
+        {
+            if (RefreshUi != null)
+                RefreshUi();
         }
     }
 
@@ -113,23 +121,35 @@ namespace MapEditorTool.UI
                 ? string.Empty
                 : e.ChangedItem.PropertyDescriptor.Name;
 
-            try
+            _context.SetStatus("Portal update started: " + propertyName);
+            var owner = propertyGrid == null ? null : propertyGrid.FindForm();
+            Task.Run(delegate
             {
-                var result = _context.PortalEditingExecutor.ApplyPortalPropertyChange(
-                    _context.GetGodotRoot(),
-                    map,
-                    portal,
-                    propertyName);
+                try
+                {
+                    var result = _context.PortalEditingExecutor.ApplyPortalPropertyChange(
+                        _context.GetGodotRoot(),
+                        map,
+                        portal,
+                        propertyName);
 
-                _context.SetStatus("Portal updated: " + result.Summary);
-                if (propertyGrid != null)
-                    propertyGrid.Refresh();
-            }
-            catch (Exception ex)
-            {
-                _context.SetStatus("Portal update failed: " + ex.Message);
-                MessageBox.Show(ex.Message, "Portal update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+                    RunOnUiThread(owner, delegate
+                    {
+                        _context.SetStatus("Portal updated: " + result.Summary);
+                        if (propertyGrid != null && !propertyGrid.IsDisposed)
+                            propertyGrid.Refresh();
+                        _context.RefreshEditorUi();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    RunOnUiThread(owner, delegate
+                    {
+                        _context.SetStatus("Portal update failed: " + ex.Message);
+                        MessageBox.Show(ex.Message, "Portal update failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    });
+                }
+            });
         }
 
         private static T FindFirstChild<T>(Control root) where T : Control
@@ -145,6 +165,20 @@ namespace MapEditorTool.UI
             }
 
             return null;
+        }
+
+        private static void RunOnUiThread(Control owner, Action action)
+        {
+            if (action == null)
+                return;
+
+            if (owner == null || owner.IsDisposed)
+                return;
+
+            if (owner.InvokeRequired)
+                owner.BeginInvoke(action);
+            else
+                action();
         }
     }
 
