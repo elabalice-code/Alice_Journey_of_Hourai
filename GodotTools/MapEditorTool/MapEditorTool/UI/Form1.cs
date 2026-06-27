@@ -306,6 +306,8 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.CollisionLayoutPolygonEdited += MapPreviewCanvasCollisionLayoutPolygonEdited;
             _mapPreviewCanvas.TileCollisionSelected += MapPreviewCanvasTileCollisionSelected;
             _mapPreviewCanvas.TileCollisionEditCommitted += MapPreviewCanvasTileCollisionEditCommitted;
+            _mapPreviewCanvas.TileCollisionAddBoxRequested += MapPreviewCanvasTileCollisionAddBoxRequested;
+            _mapPreviewCanvas.TileCollisionRemoveRequested += MapPreviewCanvasTileCollisionRemoveRequested;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -562,6 +564,106 @@ namespace MapEditorTool.UI
                 statusText.Text = _viewModel.Snapshot.StatusText;
                 ApplySnapshotToUi();
             }
+        }
+
+        private void MapPreviewCanvasTileCollisionAddBoxRequested(object sender, TileCollisionAddBoxRequestedEventArgs e)
+        {
+            if (e == null || e.Cell == null)
+                return;
+
+            var selectedMap = RequireSelectedMapForTileCollisionEvent("add");
+            if (selectedMap == null)
+                return;
+
+            try
+            {
+                var cell = e.Cell;
+                var commit = new TileCollisionCommit
+                {
+                    TileSetResPath = cell.TileSetResPath,
+                    LayerNodePath = cell.LayerNodePath,
+                    SourceId = cell.SourceId,
+                    AtlasX = cell.AtlasX,
+                    AtlasY = cell.AtlasY,
+                    CellX = cell.CellX,
+                    CellY = cell.CellY,
+                    OneWay = false,
+                    FromPoints = new List<GodotVector2>(),
+                    ToPoints = CloneGodotVectorPoints(e.Points)
+                };
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, new List<TileCollisionCommit> { commit });
+                _mapPreviewCanvas.EvictTileSetCacheForResPath(cell.TileSetResPath);
+                _mapPreviewCanvas.ClearTileCollisionSelection();
+                e.Accepted = true;
+                _viewModel.MarkSelectedMapEdited("Tile collision");
+                _viewModel.SetStatusText("Tile collision box added: " + result.Summary);
+            }
+            catch (Exception ex)
+            {
+                e.Accepted = false;
+                _viewModel.SetStatusText("Add tile collision failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Add tile collision failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                statusText.Text = _viewModel.Snapshot.StatusText;
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void MapPreviewCanvasTileCollisionRemoveRequested(object sender, TileCollisionRemoveRequestedEventArgs e)
+        {
+            if (e == null || e.Cell == null)
+                return;
+
+            var selectedMap = RequireSelectedMapForTileCollisionEvent("remove");
+            if (selectedMap == null)
+                return;
+
+            try
+            {
+                var cell = e.Cell;
+                var commit = new TileCollisionAlternativeCommit
+                {
+                    LayerNodePath = cell.LayerNodePath,
+                    CellX = cell.CellX,
+                    CellY = cell.CellY,
+                    FromAlternative = cell.Alternative,
+                    ToAlternative = 0
+                };
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var result = _tileCollisionExecutor.ApplyTileCollisionAlternativeEdits(godotRoot, selectedMap, new List<TileCollisionAlternativeCommit> { commit });
+                _mapPreviewCanvas.EvictTileSetCacheForResPath(cell.TileSetResPath);
+                _mapPreviewCanvas.ClearTileCollisionSelection();
+                e.Accepted = true;
+                _viewModel.MarkSelectedMapEdited("Tile collision");
+                _viewModel.SetStatusText("Tile collision removed: " + result.Summary);
+            }
+            catch (Exception ex)
+            {
+                e.Accepted = false;
+                _viewModel.SetStatusText("Remove tile collision failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Remove tile collision failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                statusText.Text = _viewModel.Snapshot.StatusText;
+                ApplySnapshotToUi();
+            }
+        }
+
+        private MapDefinition RequireSelectedMapForTileCollisionEvent(string operationName)
+        {
+            var selectedMap = _viewModel.SelectedMap;
+            if (selectedMap != null)
+                return selectedMap;
+
+            _viewModel.SetStatusText("Tile collision " + operationName + " failed: no map is selected.");
+            statusText.Text = _viewModel.Snapshot.StatusText;
+            return null;
         }
 
         private void LinksPreviewCanvasMapSelected(object sender, LinkMapSelectedEventArgs e)

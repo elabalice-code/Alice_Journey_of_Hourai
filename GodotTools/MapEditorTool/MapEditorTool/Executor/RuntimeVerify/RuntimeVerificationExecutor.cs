@@ -341,6 +341,14 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("WorldToTileLocal")
                     && text.Contains("EvictTileSetCacheForResPath"),
                 "MapEditorTool map preview can drag selected TileSet collision vertices and publish commit requests.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-tileset-collision-add-remove", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("TileCollisionAddBoxRequested")
+                    && text.Contains("TileCollisionRemoveRequested")
+                    && text.Contains("TryHandleTileCollisionAddRemove")
+                    && text.Contains("HitTestTileCell")
+                    && text.Contains("CreateDefaultTileCollisionSquare")
+                    && text.Contains("TileCollisionCellHit"),
+                "MapEditorTool map preview can request Add Box and Remove Collision actions for TileSet collision cells.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-tileset-collision-selection", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("MapPreviewCanvasTileCollisionSelected")
                     && text.Contains("TileCollisionSelected")
@@ -357,6 +365,14 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("EvictTileSetCacheForResPath")
                     && text.Contains("ClearTileCollisionSelection"),
                 "MapEditorTool UI routes TileSet collision vertex edits through TileCollisionExecutor and refreshes preview cache.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-commits-tileset-collision-add-remove", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasTileCollisionAddBoxRequested")
+                    && text.Contains("MapPreviewCanvasTileCollisionRemoveRequested")
+                    && text.Contains("ApplyTileCollisionEdits")
+                    && text.Contains("ApplyTileCollisionAlternativeEdits")
+                    && text.Contains("Tile collision box added")
+                    && text.Contains("Tile collision removed"),
+                "MapEditorTool UI routes TileSet Add Box and Remove Collision requests through TileCollisionExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-collision-paint", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("CollisionLayoutEdited")
                     && text.Contains("ApplyCollisionPaintAt")

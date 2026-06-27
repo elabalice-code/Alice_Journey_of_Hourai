@@ -56,6 +56,8 @@ namespace MapEditorTool.UI
         public event EventHandler<CollisionLayoutPolygonEditedEventArgs> CollisionLayoutPolygonEdited;
         public event EventHandler<TileCollisionSelectedEventArgs> TileCollisionSelected;
         public event EventHandler<TileCollisionEditCommittedEventArgs> TileCollisionEditCommitted;
+        public event EventHandler<TileCollisionAddBoxRequestedEventArgs> TileCollisionAddBoxRequested;
+        public event EventHandler<TileCollisionRemoveRequestedEventArgs> TileCollisionRemoveRequested;
 
         public MapPreviewCanvas()
         {
@@ -167,6 +169,9 @@ namespace MapEditorTool.UI
 
             if (CanSelectTileCollision() && e.Button == MouseButtons.Left)
             {
+                if (TryHandleTileCollisionAddRemove(e.Location))
+                    return;
+
                 if (BeginTileCollisionVertexDrag(e.Location))
                     return;
 
@@ -424,7 +429,10 @@ namespace MapEditorTool.UI
                 _map != null &&
                 _map.TileLayers != null &&
                 _collisionEditorMode == CollisionEditorMode.TileSetCollision &&
-                (_collisionEditorTool == CollisionEditorTool.Select || _collisionEditorTool == CollisionEditorTool.Vertex);
+                (_collisionEditorTool == CollisionEditorTool.Select ||
+                 _collisionEditorTool == CollisionEditorTool.Vertex ||
+                 _collisionEditorTool == CollisionEditorTool.AddBox ||
+                 _collisionEditorTool == CollisionEditorTool.Remove);
         }
 
         private bool SelectTileCollisionAt(Point location)
@@ -438,6 +446,46 @@ namespace MapEditorTool.UI
 
             SetTileCollisionSelection(selection);
             return true;
+        }
+
+        private bool TryHandleTileCollisionAddRemove(Point location)
+        {
+            if (_collisionEditorTool != CollisionEditorTool.AddBox && _collisionEditorTool != CollisionEditorTool.Remove)
+                return false;
+
+            TileCollisionCellHit hit;
+            if (!HitTestTileCell(location, out hit))
+            {
+                SetTileCollisionSelection(null);
+                return true;
+            }
+
+            if (_collisionEditorTool == CollisionEditorTool.AddBox)
+            {
+                var handler = TileCollisionAddBoxRequested;
+                if (handler != null)
+                    handler(this, new TileCollisionAddBoxRequestedEventArgs(hit, CreateDefaultTileCollisionSquare()));
+            }
+            else
+            {
+                var handler = TileCollisionRemoveRequested;
+                if (handler != null)
+                    handler(this, new TileCollisionRemoveRequestedEventArgs(hit));
+            }
+
+            return true;
+        }
+
+        private static List<GodotVector2> CreateDefaultTileCollisionSquare()
+        {
+            var half = TileSize / 2f;
+            return new List<GodotVector2>
+            {
+                new GodotVector2(-half, -half),
+                new GodotVector2(half, -half),
+                new GodotVector2(half, half),
+                new GodotVector2(-half, half)
+            };
         }
 
         private void SetTileCollisionSelection(TileCollisionSelection selection)
@@ -967,6 +1015,42 @@ namespace MapEditorTool.UI
                     hit = new CollisionPolygonTransformHit(CollisionPolygonTransformKind.Rotate, CollisionScaleHandleKind.BottomRight);
                     return true;
                 }
+            }
+
+            return false;
+        }
+
+        private bool HitTestTileCell(Point location, out TileCollisionCellHit hit)
+        {
+            hit = null;
+            if (_map == null || _map.TileLayers == null)
+                return false;
+
+            var world = ScreenToWorld(location);
+            var cellX = (int)Math.Floor(world.X / TileSize);
+            var cellY = (int)Math.Floor(world.Y / TileSize);
+            if (cellX < 0 || cellY < 0 || cellX >= Math.Max(1, _map.RoomWidth) || cellY >= Math.Max(1, _map.RoomHeight))
+                return false;
+
+            foreach (var layer in _map.TileLayers.OrderByDescending(layer => layer.ZIndex).ThenByDescending(layer => layer.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (layer == null || !layer.Visible || layer.Cells == null || layer.Cells.Count == 0)
+                    continue;
+
+                var cell = layer.Cells.FirstOrDefault(item => item.X == cellX && item.Y == cellY);
+                if (cell == null)
+                    continue;
+
+                hit = new TileCollisionCellHit(
+                    layer.TileSetPath,
+                    layer.NodePath,
+                    cell.SourceId,
+                    cell.AtlasX,
+                    cell.AtlasY,
+                    cell.X,
+                    cell.Y,
+                    cell.Alternative);
+                return true;
             }
 
             return false;
@@ -2085,6 +2169,62 @@ namespace MapEditorTool.UI
         public List<GodotVector2> ToPoints { get; private set; }
         public bool Accepted { get; set; }
         public string ErrorMessage { get; set; }
+    }
+
+    internal sealed class TileCollisionAddBoxRequestedEventArgs : EventArgs
+    {
+        public TileCollisionAddBoxRequestedEventArgs(TileCollisionCellHit cell, List<GodotVector2> points)
+        {
+            Cell = cell;
+            Points = points ?? new List<GodotVector2>();
+        }
+
+        public TileCollisionCellHit Cell { get; private set; }
+        public List<GodotVector2> Points { get; private set; }
+        public bool Accepted { get; set; }
+    }
+
+    internal sealed class TileCollisionRemoveRequestedEventArgs : EventArgs
+    {
+        public TileCollisionRemoveRequestedEventArgs(TileCollisionCellHit cell)
+        {
+            Cell = cell;
+        }
+
+        public TileCollisionCellHit Cell { get; private set; }
+        public bool Accepted { get; set; }
+    }
+
+    internal sealed class TileCollisionCellHit
+    {
+        public TileCollisionCellHit(
+            string tileSetResPath,
+            string layerNodePath,
+            int sourceId,
+            int atlasX,
+            int atlasY,
+            int cellX,
+            int cellY,
+            int alternative)
+        {
+            TileSetResPath = tileSetResPath ?? string.Empty;
+            LayerNodePath = layerNodePath ?? string.Empty;
+            SourceId = sourceId;
+            AtlasX = atlasX;
+            AtlasY = atlasY;
+            CellX = cellX;
+            CellY = cellY;
+            Alternative = alternative;
+        }
+
+        public string TileSetResPath { get; private set; }
+        public string LayerNodePath { get; private set; }
+        public int SourceId { get; private set; }
+        public int AtlasX { get; private set; }
+        public int AtlasY { get; private set; }
+        public int CellX { get; private set; }
+        public int CellY { get; private set; }
+        public int Alternative { get; private set; }
     }
 
     internal sealed class TileCollisionSelection
