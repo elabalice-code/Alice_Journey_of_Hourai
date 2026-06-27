@@ -228,6 +228,16 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PatchMapTextures")
                     && text.Contains("PatchCollisionMetadata"),
                 "MapEditorTool can apply core MapDefinition state back into Godot scene resources.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-writes-map-property-changes", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("TryWriteBackMapPropertyChange")
+                    && text.Contains("IsMapTextureProperty")
+                    && text.Contains("IsMapTextureMetadataProperty")
+                    && text.Contains("IsMapCollisionMetadataProperty")
+                    && text.Contains("PatchMapTextures")
+                    && text.Contains("PatchTextureMetadata")
+                    && text.Contains("PatchBackgroundTileLayerVisibility")
+                    && text.Contains("PatchCollisionMetadata"),
+                "MapEditorTool writes map texture, background visibility, and collision metadata property edits back through executors.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-pins-starting-map", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("PinSelectedMapAsStartingMap")
                     && text.Contains("GameSettingsExecutor")

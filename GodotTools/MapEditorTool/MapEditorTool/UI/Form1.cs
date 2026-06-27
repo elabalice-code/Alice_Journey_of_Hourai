@@ -13,6 +13,7 @@ using MapEditorTool.Executor.MapCreation;
 using MapEditorTool.Executor.MapDeletion;
 using MapEditorTool.Executor.MapImport;
 using MapEditorTool.Executor.MapReport;
+using MapEditorTool.Executor.MapTexture;
 using MapEditorTool.Executor.PortalAnimation;
 using MapEditorTool.Executor.PortalEditing;
 using MapEditorTool.Executor.ProjectFile;
@@ -36,6 +37,7 @@ namespace MapEditorTool.UI
         private readonly MapDeletionExecutor _mapDeletionExecutor;
         private readonly MapImportExecutor _mapImportExecutor;
         private readonly MapReportExecutor _mapReportExecutor;
+        private readonly MapTextureExecutor _mapTextureExecutor;
         private readonly PortalAnimationExecutor _portalAnimationExecutor;
         private readonly PortalEditingExecutor _portalEditingExecutor;
         private readonly ProjectFileExecutor _projectFileExecutor;
@@ -71,6 +73,7 @@ namespace MapEditorTool.UI
             _mapDeletionExecutor = new MapDeletionExecutor();
             _mapImportExecutor = new MapImportExecutor();
             _mapReportExecutor = new MapReportExecutor(_mapImportExecutor);
+            _mapTextureExecutor = new MapTextureExecutor();
             _portalAnimationExecutor = new PortalAnimationExecutor();
             _scenePatchExecutor = new ScenePatchExecutor();
             _portalEditingExecutor = new PortalEditingExecutor(_mapCreationExecutor, _scenePatchExecutor, _portalAnimationExecutor);
@@ -2371,7 +2374,123 @@ namespace MapEditorTool.UI
                 ? string.Empty
                 : e.ChangedItem.PropertyDescriptor.Name;
             _viewModel.MarkSelectedMapEdited(propertyName);
+            TryWriteBackMapPropertyChange(propertyName, e);
             ApplySnapshotToUi();
+        }
+
+        private void TryWriteBackMapPropertyChange(string propertyName, PropertyValueChangedEventArgs e)
+        {
+            var map = _viewModel.SelectedMap;
+            if (map == null || string.IsNullOrWhiteSpace(propertyName))
+                return;
+
+            var writeTextures = IsMapTextureProperty(propertyName);
+            var writeTextureMetadata = IsMapTextureMetadataProperty(propertyName);
+            var writeBackgroundLayerVisibility = string.Equals(propertyName, nameof(MapDefinition.BackgroundTileLayerVisible), StringComparison.Ordinal);
+            var writeCollisionMetadata = IsMapCollisionMetadataProperty(propertyName);
+            if (!writeTextures && !writeTextureMetadata && !writeBackgroundLayerVisibility && !writeCollisionMetadata)
+                return;
+
+            if (string.Equals(propertyName, nameof(MapDefinition.BackgroundTextureEnabled), StringComparison.Ordinal) && map.BackgroundTextureEnabled)
+            {
+                if (map.BackgroundTileLayerVisible)
+                {
+                    map.BackgroundTileLayerVisible = false;
+                    writeBackgroundLayerVisibility = true;
+                }
+            }
+
+            if (writeBackgroundLayerVisibility && map.BackgroundTileLayerVisible)
+            {
+                if (map.BackgroundTextureEnabled)
+                {
+                    map.BackgroundTextureEnabled = false;
+                    writeTextures = true;
+                }
+            }
+
+            try
+            {
+                var godotRoot = ResolveGodotRootForEditor();
+                var sceneFilePath = ResolveGodotResourcePath(godotRoot, map.ScenePath);
+                var steps = new List<string>();
+
+                if (writeTextures)
+                {
+                    var textures = _mapTextureExecutor.PatchMapTextures(sceneFilePath, map);
+                    steps.Add("textures: " + textures.Summary);
+                }
+
+                if (writeTextureMetadata)
+                {
+                    var metadata = _mapTextureExecutor.PatchTextureMetadata(sceneFilePath, map);
+                    steps.Add("textureMetadata: " + metadata.Summary);
+                }
+
+                if (writeBackgroundLayerVisibility)
+                {
+                    var background = _scenePatchExecutor.PatchBackgroundTileLayerVisibility(sceneFilePath, map);
+                    steps.Add("backgroundLayer: " + background.NewRawValue);
+                }
+
+                if (writeCollisionMetadata)
+                {
+                    var tilePath = _collisionLayoutExecutor.ResolveCollisionDataResPath(map, CollisionLayoutTarget.Tile, true);
+                    var foregroundPath = _collisionLayoutExecutor.ResolveCollisionDataResPath(map, CollisionLayoutTarget.ForegroundTexture, true);
+                    var collision = _scenePatchExecutor.PatchCollisionMetadata(sceneFilePath, map.CollisionUsed, tilePath, foregroundPath);
+                    steps.Add("collisionMetadata: " + collision.NewRawValue);
+                }
+
+                mapPropertyGrid.Refresh();
+                _viewModel.SetStatusText("Map property applied: " + propertyName + " | " + string.Join(" | ", steps.ToArray()));
+
+                if (writeCollisionMetadata || writeTextures || writeBackgroundLayerVisibility)
+                {
+                    ClearCollisionOverlay();
+                    RefreshCollisionOverlayFromToolbar(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (e != null && e.ChangedItem != null && e.ChangedItem.PropertyDescriptor != null)
+                {
+                    try
+                    {
+                        e.ChangedItem.PropertyDescriptor.SetValue(map, e.OldValue);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                mapPropertyGrid.Refresh();
+                _viewModel.SetStatusText("Map property writeback failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Map property writeback failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private static bool IsMapTextureProperty(string propertyName)
+        {
+            return string.Equals(propertyName, nameof(MapDefinition.BackgroundTexturePath), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.TemplateTexturePath), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.BackgroundTextureEnabled), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.ForegroundTexturePath), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.ForegroundTextureEnabled), StringComparison.Ordinal);
+        }
+
+        private static bool IsMapTextureMetadataProperty(string propertyName)
+        {
+            return string.Equals(propertyName, nameof(MapDefinition.ForegroundTextureAnchor), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.ForegroundTextureUpscale), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.BackgroundTextureAnchor), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.BackgroundTextureUpscale), StringComparison.Ordinal);
+        }
+
+        private static bool IsMapCollisionMetadataProperty(string propertyName)
+        {
+            return string.Equals(propertyName, nameof(MapDefinition.CollisionUsed), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.TileCollisionDataPath), StringComparison.Ordinal) ||
+                string.Equals(propertyName, nameof(MapDefinition.ForegroundTextureCollisionDataPath), StringComparison.Ordinal);
         }
 
         private string DescribeSource(object sender)
