@@ -333,6 +333,14 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("BuildTilePhysicsPolygonKey")
                     && text.Contains("BuildTileCollisionScreenPoints"),
                 "MapEditorTool map preview can draw and select TileSet collision polygons for imported tile layers.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-tileset-collision-vertex-drag", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("BeginTileCollisionVertexDrag")
+                    && text.Contains("ApplyTileCollisionVertexDrag")
+                    && text.Contains("HitTestSelectedTileCollisionVertex")
+                    && text.Contains("TileCollisionEditCommitted")
+                    && text.Contains("WorldToTileLocal")
+                    && text.Contains("EvictTileSetCacheForResPath"),
+                "MapEditorTool map preview can drag selected TileSet collision vertices and publish commit requests.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-tileset-collision-selection", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("MapPreviewCanvasTileCollisionSelected")
                     && text.Contains("TileCollisionSelected")
@@ -340,6 +348,15 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("Tile collision selection cleared")
                     && text.Contains("GetSelectedCollisionEditorMode() == CollisionEditorMode.TileSetCollision"),
                 "MapEditorTool UI consumes TileSet collision selection events and can show TileSet collision overlay without requiring a collision layout file.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-commits-tileset-collision-edits", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasTileCollisionEditCommitted")
+                    && text.Contains("TileCollisionExecutor")
+                    && text.Contains("ApplyTileCollisionEdits")
+                    && text.Contains("TileCollisionCommit")
+                    && text.Contains("Tile collision vertex saved")
+                    && text.Contains("EvictTileSetCacheForResPath")
+                    && text.Contains("ClearTileCollisionSelection"),
+                "MapEditorTool UI routes TileSet collision vertex edits through TileCollisionExecutor and refreshes preview cache.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-collision-paint", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("CollisionLayoutEdited")
                     && text.Contains("ApplyCollisionPaintAt")

@@ -18,6 +18,7 @@ using MapEditorTool.Executor.PortalEditing;
 using MapEditorTool.Executor.ProjectFile;
 using MapEditorTool.Executor.ResourcePath;
 using MapEditorTool.Executor.RuntimeVerify;
+using MapEditorTool.Executor.TileCollision;
 using MapEditorTool.Models;
 using MapEditorTool.ViewModel;
 
@@ -39,6 +40,7 @@ namespace MapEditorTool.UI
         private readonly ProjectFileExecutor _projectFileExecutor;
         private readonly ResourcePathExecutor _resourcePathExecutor;
         private readonly RuntimeVerificationExecutor _runtimeVerificationExecutor;
+        private readonly TileCollisionExecutor _tileCollisionExecutor;
         private readonly UndoManager _undoManager;
         private readonly MapEditorShellViewModel _viewModel;
         private readonly MapPreviewCanvas _mapPreviewCanvas;
@@ -72,6 +74,7 @@ namespace MapEditorTool.UI
             _projectFileExecutor = new ProjectFileExecutor();
             _resourcePathExecutor = new ResourcePathExecutor();
             _runtimeVerificationExecutor = new RuntimeVerificationExecutor(_mapImportExecutor);
+            _tileCollisionExecutor = new TileCollisionExecutor();
 
             BuildMapEditorShell();
             RegisterPropertyGridEditors();
@@ -302,6 +305,7 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.CollisionLayoutPolygonSelected += MapPreviewCanvasCollisionLayoutPolygonSelected;
             _mapPreviewCanvas.CollisionLayoutPolygonEdited += MapPreviewCanvasCollisionLayoutPolygonEdited;
             _mapPreviewCanvas.TileCollisionSelected += MapPreviewCanvasTileCollisionSelected;
+            _mapPreviewCanvas.TileCollisionEditCommitted += MapPreviewCanvasTileCollisionEditCommitted;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -504,6 +508,60 @@ namespace MapEditorTool.UI
                 _viewModel.SetStatusText("Tile collision selected: " + e.Selection.FormatSummary());
 
             statusText.Text = _viewModel.Snapshot.StatusText;
+        }
+
+        private void MapPreviewCanvasTileCollisionEditCommitted(object sender, TileCollisionEditCommittedEventArgs e)
+        {
+            if (e == null || e.Selection == null)
+                return;
+
+            var selectedMap = _viewModel.SelectedMap;
+            if (selectedMap == null)
+            {
+                e.Accepted = false;
+                e.ErrorMessage = "No map is selected.";
+                _viewModel.SetStatusText("Tile collision edit failed: " + e.ErrorMessage);
+                statusText.Text = _viewModel.Snapshot.StatusText;
+                return;
+            }
+
+            try
+            {
+                var selection = e.Selection;
+                var commit = new TileCollisionCommit
+                {
+                    TileSetResPath = selection.TileSetResPath,
+                    LayerNodePath = selection.LayerNodePath,
+                    SourceId = selection.SourceId,
+                    AtlasX = selection.AtlasX,
+                    AtlasY = selection.AtlasY,
+                    CellX = selection.CellX,
+                    CellY = selection.CellY,
+                    OneWay = selection.OneWay,
+                    FromPoints = CloneGodotVectorPoints(e.FromPoints),
+                    ToPoints = CloneGodotVectorPoints(e.ToPoints)
+                };
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var result = _tileCollisionExecutor.ApplyTileCollisionEdits(godotRoot, selectedMap, new List<TileCollisionCommit> { commit });
+                _mapPreviewCanvas.EvictTileSetCacheForResPath(selection.TileSetResPath);
+                _mapPreviewCanvas.ClearTileCollisionSelection();
+                e.Accepted = true;
+                _viewModel.MarkSelectedMapEdited("Tile collision");
+                _viewModel.SetStatusText("Tile collision vertex saved: " + result.Summary);
+            }
+            catch (Exception ex)
+            {
+                e.Accepted = false;
+                e.ErrorMessage = ex.Message;
+                _viewModel.SetStatusText("Tile collision edit failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Tile collision edit failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                statusText.Text = _viewModel.Snapshot.StatusText;
+                ApplySnapshotToUi();
+            }
         }
 
         private void LinksPreviewCanvasMapSelected(object sender, LinkMapSelectedEventArgs e)
@@ -1542,6 +1600,18 @@ namespace MapEditorTool.UI
                     clone.Polygons.Add(polygonClone);
                 }
             }
+
+            return clone;
+        }
+
+        private static List<GodotVector2> CloneGodotVectorPoints(List<GodotVector2> points)
+        {
+            var clone = new List<GodotVector2>();
+            if (points == null)
+                return clone;
+
+            foreach (var point in points)
+                clone.Add(new GodotVector2(point.X, point.Y));
 
             return clone;
         }
