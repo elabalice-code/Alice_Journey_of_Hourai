@@ -342,6 +342,7 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.TileCollisionAddBoxRequested += MapPreviewCanvasTileCollisionAddBoxRequested;
             _mapPreviewCanvas.TileCollisionRemoveRequested += MapPreviewCanvasTileCollisionRemoveRequested;
             _mapPreviewCanvas.TileCollisionContextRequested += MapPreviewCanvasTileCollisionContextRequested;
+            _mapPreviewCanvas.CollisionToolShortcutRequested += MapPreviewCanvasCollisionToolShortcutRequested;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -1998,6 +1999,27 @@ namespace MapEditorTool.UI
             ApplySnapshotToUi();
         }
 
+        private void MapPreviewCanvasCollisionToolShortcutRequested(object sender, CollisionToolShortcutRequestedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            if (!IsCollisionViewSelected())
+                return;
+
+            var toolName = GetCollisionToolButtonName(e.Tool);
+            var toolItem = FindToolStripItem(mapTools.Items, toolName);
+            if (toolItem == null)
+                return;
+
+            e.Accepted = true;
+            ApplyCollisionToolButtonSelection(toolItem);
+            UpdateCollisionEditorState();
+            _viewModel.SetStatusText("Collision tool selected: " + GetCollisionToolDisplayName(e.Tool));
+            statusText.Text = _viewModel.Snapshot.StatusText;
+            ApplySnapshotToUi();
+        }
+
         private void ApplyCollisionToolButtonSelection(ToolStripItem selectedItem)
         {
             if (selectedItem == null || !IsCollisionToolButton(selectedItem.Name))
@@ -2048,6 +2070,48 @@ namespace MapEditorTool.UI
                 return CollisionEditorTool.Remove;
 
             return CollisionEditorTool.Select;
+        }
+
+        private static string GetCollisionToolButtonName(CollisionEditorTool tool)
+        {
+            switch (tool)
+            {
+                case CollisionEditorTool.Vertex:
+                    return "tool.vertex";
+                case CollisionEditorTool.Move:
+                    return "tool.move";
+                case CollisionEditorTool.Rotate:
+                    return "tool.rotate";
+                case CollisionEditorTool.Scale:
+                    return "tool.scale";
+                case CollisionEditorTool.AddBox:
+                    return "tool.addSquareCollision";
+                case CollisionEditorTool.Remove:
+                    return "tool.removeCollision";
+                default:
+                    return "tool.select";
+            }
+        }
+
+        private static string GetCollisionToolDisplayName(CollisionEditorTool tool)
+        {
+            switch (tool)
+            {
+                case CollisionEditorTool.Vertex:
+                    return "Vertex";
+                case CollisionEditorTool.Move:
+                    return "Move";
+                case CollisionEditorTool.Rotate:
+                    return "Rotate";
+                case CollisionEditorTool.Scale:
+                    return "Scale";
+                case CollisionEditorTool.AddBox:
+                    return "Add Box";
+                case CollisionEditorTool.Remove:
+                    return "Remove Collision";
+                default:
+                    return "Select";
+            }
         }
 
         private bool IsToolButtonChecked(string name)

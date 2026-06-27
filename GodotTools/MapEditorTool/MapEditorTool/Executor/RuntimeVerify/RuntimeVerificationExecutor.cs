@@ -380,6 +380,25 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("RequestTileCollisionContext")
                     && text.Contains("TileCollisionContextRequestedEventArgs"),
                 "MapEditorTool map preview can request TileSet collision context actions from right-click selection.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-collision-tool-shortcuts", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("CollisionToolShortcutRequested")
+                    && text.Contains("TryRequestCollisionToolShortcut")
+                    && text.Contains("Keys.Q")
+                    && text.Contains("Keys.S")
+                    && text.Contains("Keys.W")
+                    && text.Contains("Keys.E")
+                    && text.Contains("Keys.R")
+                    && text.Contains("Keys.A")
+                    && text.Contains("Keys.D"),
+                "MapEditorTool map preview publishes collision tool shortcut requests for Select, Vertex, Move, Rotate, Scale, Add Box, and Remove Collision.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-collision-tool-shortcuts", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("CollisionToolShortcutRequested += MapPreviewCanvasCollisionToolShortcutRequested")
+                    && text.Contains("MapPreviewCanvasCollisionToolShortcutRequested")
+                    && text.Contains("GetCollisionToolButtonName")
+                    && text.Contains("GetCollisionToolDisplayName")
+                    && text.Contains("ApplyCollisionToolButtonSelection")
+                    && text.Contains("Collision tool selected"),
+                "MapEditorTool UI consumes collision tool shortcut requests and updates toolbar/editor state.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-tileset-collision-selection", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("MapPreviewCanvasTileCollisionSelected")
                     && text.Contains("TileCollisionSelected")

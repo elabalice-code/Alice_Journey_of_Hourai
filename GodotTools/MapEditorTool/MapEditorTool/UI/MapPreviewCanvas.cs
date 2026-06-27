@@ -63,6 +63,7 @@ namespace MapEditorTool.UI
         public event EventHandler<TileCollisionAddBoxRequestedEventArgs> TileCollisionAddBoxRequested;
         public event EventHandler<TileCollisionRemoveRequestedEventArgs> TileCollisionRemoveRequested;
         public event EventHandler<TileCollisionContextRequestedEventArgs> TileCollisionContextRequested;
+        public event EventHandler<CollisionToolShortcutRequestedEventArgs> CollisionToolShortcutRequested;
 
         public MapPreviewCanvas()
         {
@@ -476,6 +477,12 @@ namespace MapEditorTool.UI
         {
             base.OnKeyDown(e);
 
+            if (TryRequestCollisionToolShortcut(e.KeyCode))
+            {
+                e.Handled = true;
+                return;
+            }
+
             if (e.KeyCode == Keys.Delete &&
                 _collisionEditorMode == CollisionEditorMode.CollisionLayout &&
                 IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
@@ -483,6 +490,45 @@ namespace MapEditorTool.UI
                 RemoveSelectedCollisionPolygon();
                 e.Handled = true;
             }
+        }
+
+        private bool TryRequestCollisionToolShortcut(Keys keyCode)
+        {
+            CollisionEditorTool tool;
+            switch (keyCode)
+            {
+                case Keys.S:
+                    tool = CollisionEditorTool.Select;
+                    break;
+                case Keys.Q:
+                    tool = CollisionEditorTool.Vertex;
+                    break;
+                case Keys.W:
+                    tool = CollisionEditorTool.Move;
+                    break;
+                case Keys.E:
+                    tool = CollisionEditorTool.Rotate;
+                    break;
+                case Keys.R:
+                    tool = CollisionEditorTool.Scale;
+                    break;
+                case Keys.A:
+                    tool = CollisionEditorTool.AddBox;
+                    break;
+                case Keys.D:
+                    tool = CollisionEditorTool.Remove;
+                    break;
+                default:
+                    return false;
+            }
+
+            var handler = CollisionToolShortcutRequested;
+            if (handler == null)
+                return false;
+
+            var args = new CollisionToolShortcutRequestedEventArgs(tool);
+            handler(this, args);
+            return args.Accepted;
         }
 
         private RectangleF ComputeRoomBounds(int roomPixelWidth, int roomPixelHeight)
@@ -2995,6 +3041,17 @@ namespace MapEditorTool.UI
         public List<TileCollisionSelection> Selections { get; private set; }
         public TileCollisionSelection Selection { get; private set; }
         public Point Location { get; private set; }
+    }
+
+    internal sealed class CollisionToolShortcutRequestedEventArgs : EventArgs
+    {
+        public CollisionToolShortcutRequestedEventArgs(CollisionEditorTool tool)
+        {
+            Tool = tool;
+        }
+
+        public CollisionEditorTool Tool { get; private set; }
+        public bool Accepted { get; set; }
     }
 
     internal sealed class TileCollisionCellHit
