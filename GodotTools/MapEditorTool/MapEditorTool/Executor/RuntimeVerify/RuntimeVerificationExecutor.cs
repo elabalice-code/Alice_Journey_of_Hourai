@@ -529,6 +529,13 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("SelectMapById")
                     && text.Contains("SelectLink(e.Link)"),
                 "MapEditorTool UI consumes links preview navigation and portal target events, writes portal targets through the executor, and rolls back model state on write failure.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-portal-target-undo-redo", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("PortalTargetUndoAction")
+                    && text.Contains("PushPortalTargetUndo")
+                    && text.Contains("ApplyPortalTargetUndoSnapshot")
+                    && text.Contains("Scene portal target updated")
+                    && text.Contains("PortalTargetSnapshot"),
+                "MapEditorTool UI can undo and redo portal target changes while writing scene portal target data through the executor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-link-navigation-state", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
                 text => text.Contains("SelectMapById")
                     && text.Contains("SelectLink(MapLink link)")

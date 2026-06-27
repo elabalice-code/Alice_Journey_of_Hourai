@@ -994,6 +994,7 @@ namespace MapEditorTool.UI
                 {
                     if (link != null)
                         _viewModel.CurrentProject.Links.Remove(link);
+                    link = null;
                 }
                 else if (link == null)
                 {
@@ -1012,6 +1013,18 @@ namespace MapEditorTool.UI
 
                 var godotRoot = ResolveGodotRootForEditor();
                 _portalEditingExecutor.ApplyPortalPropertyChange(godotRoot, map, portal, "TargetMapId");
+                PushPortalTargetUndo(
+                    "Portal target: " + FormatPortalName(portal),
+                    map,
+                    fromPortalId,
+                    oldTargetMapId,
+                    oldTargetPortalId,
+                    oldLinkToMapId,
+                    oldLinkToPortalId,
+                    hadExistingLink,
+                    targetMapId,
+                    targetPortalId,
+                    link != null);
                 _viewModel.MarkSelectedMapEdited("Portal target");
                 if (link != null)
                     _viewModel.SelectLink(link);
@@ -1643,6 +1656,50 @@ namespace MapEditorTool.UI
                 ApplyNodePositionUndoSnapshot));
         }
 
+        private void PushPortalTargetUndo(
+            string name,
+            MapDefinition map,
+            string portalId,
+            string fromTargetMapId,
+            string fromTargetPortalId,
+            string fromLinkToMapId,
+            string fromLinkToPortalId,
+            bool hadFromLink,
+            string toTargetMapId,
+            string toTargetPortalId,
+            bool hadToLink)
+        {
+            if (_isReplayingUndo)
+                return;
+            if (map == null || string.IsNullOrWhiteSpace(portalId))
+                return;
+
+            if (string.Equals(fromTargetMapId ?? string.Empty, toTargetMapId ?? string.Empty, StringComparison.Ordinal) &&
+                string.Equals(fromTargetPortalId ?? string.Empty, toTargetPortalId ?? string.Empty, StringComparison.Ordinal) &&
+                string.Equals(fromLinkToMapId ?? string.Empty, toTargetMapId ?? string.Empty, StringComparison.Ordinal) &&
+                string.Equals(fromLinkToPortalId ?? string.Empty, toTargetPortalId ?? string.Empty, StringComparison.Ordinal) &&
+                hadFromLink == hadToLink)
+            {
+                return;
+            }
+
+            _undoManager.Push(new PortalTargetUndoAction(
+                string.IsNullOrWhiteSpace(name) ? "Portal target" : name,
+                map,
+                portalId,
+                fromTargetMapId,
+                fromTargetPortalId,
+                fromLinkToMapId,
+                fromLinkToPortalId,
+                hadFromLink,
+                toTargetMapId,
+                toTargetPortalId,
+                toTargetMapId,
+                toTargetPortalId,
+                hadToLink,
+                ApplyPortalTargetUndoSnapshot));
+        }
+
         private void PushTileCollisionUndo(
             string name,
             MapDefinition map,
@@ -1756,6 +1813,36 @@ namespace MapEditorTool.UI
             _scenePatchExecutor.PatchNodePosition(sceneFilePath, nodePath, x, y);
             mapPropertyGrid.Refresh();
             _viewModel.MarkSelectedMapEdited("Node position undo");
+        }
+
+        private void ApplyPortalTargetUndoSnapshot(
+            MapDefinition map,
+            string portalId,
+            string targetMapId,
+            string targetPortalId,
+            string linkToMapId,
+            string linkToPortalId,
+            bool hasLink)
+        {
+            if (map == null || string.IsNullOrWhiteSpace(portalId))
+                return;
+
+            var portal = FindPortalById(map, portalId);
+            if (portal == null)
+                return;
+
+            portal.TargetMapId = targetMapId ?? string.Empty;
+            portal.TargetPortalId = targetPortalId ?? string.Empty;
+            RestoreLinkForPortal(map, portalId, hasLink, linkToMapId, linkToPortalId);
+
+            var godotRoot = ResolveGodotRootForEditor();
+            _portalEditingExecutor.ApplyPortalPropertyChange(godotRoot, map, portal, "TargetMapId");
+            var link = FindLinkForPortal(NormalizeMapId(map), portalId);
+            if (link != null)
+                _viewModel.SelectLink(link);
+            _linksPreviewCanvas.Invalidate();
+            mapPropertyGrid.Refresh();
+            _viewModel.MarkSelectedMapEdited("Portal target undo");
         }
 
         private void ApplyTileCollisionUndoSnapshot(MapDefinition map, IEnumerable<string> tileSetResPaths)
@@ -2968,6 +3055,89 @@ namespace MapEditorTool.UI
                 if (_apply != null)
                     _apply(_map, _nodePath, _toX, _toY);
             }
+        }
+
+        private sealed class PortalTargetUndoAction : IUndoableAction
+        {
+            private readonly MapDefinition _map;
+            private readonly string _portalId;
+            private readonly PortalTargetSnapshot _before;
+            private readonly PortalTargetSnapshot _after;
+            private readonly Action<MapDefinition, string, string, string, string, string, bool> _apply;
+
+            public PortalTargetUndoAction(
+                string name,
+                MapDefinition map,
+                string portalId,
+                string fromTargetMapId,
+                string fromTargetPortalId,
+                string fromLinkToMapId,
+                string fromLinkToPortalId,
+                bool hadFromLink,
+                string toTargetMapId,
+                string toTargetPortalId,
+                string toLinkToMapId,
+                string toLinkToPortalId,
+                bool hadToLink,
+                Action<MapDefinition, string, string, string, string, string, bool> apply)
+            {
+                Name = name ?? string.Empty;
+                _map = map;
+                _portalId = portalId ?? string.Empty;
+                _before = new PortalTargetSnapshot(fromTargetMapId, fromTargetPortalId, fromLinkToMapId, fromLinkToPortalId, hadFromLink);
+                _after = new PortalTargetSnapshot(toTargetMapId, toTargetPortalId, toLinkToMapId, toLinkToPortalId, hadToLink);
+                _apply = apply;
+            }
+
+            public string Name { get; private set; }
+
+            public string CompletionHint
+            {
+                get { return "Scene portal target updated."; }
+            }
+
+            public void Undo()
+            {
+                Apply(_before);
+            }
+
+            public void Redo()
+            {
+                Apply(_after);
+            }
+
+            private void Apply(PortalTargetSnapshot snapshot)
+            {
+                if (_apply != null)
+                {
+                    _apply(
+                        _map,
+                        _portalId,
+                        snapshot.TargetMapId,
+                        snapshot.TargetPortalId,
+                        snapshot.LinkToMapId,
+                        snapshot.LinkToPortalId,
+                        snapshot.HasLink);
+                }
+            }
+        }
+
+        private sealed class PortalTargetSnapshot
+        {
+            public PortalTargetSnapshot(string targetMapId, string targetPortalId, string linkToMapId, string linkToPortalId, bool hasLink)
+            {
+                TargetMapId = targetMapId ?? string.Empty;
+                TargetPortalId = targetPortalId ?? string.Empty;
+                LinkToMapId = linkToMapId ?? string.Empty;
+                LinkToPortalId = linkToPortalId ?? string.Empty;
+                HasLink = hasLink;
+            }
+
+            public string TargetMapId { get; private set; }
+            public string TargetPortalId { get; private set; }
+            public string LinkToMapId { get; private set; }
+            public string LinkToPortalId { get; private set; }
+            public bool HasLink { get; private set; }
         }
 
         private sealed class TileCollisionUndoAction : IUndoableAction
