@@ -15,6 +15,9 @@ namespace MapEditorTool.UI
     internal sealed class MapPreviewCanvas : Control
     {
         private const int TileSize = 32;
+        private const float TransformHandleSize = 9f;
+        private const float RotateHandleOffset = 26f;
+        private const float RotateHandleRadius = 8f;
         private readonly Dictionary<string, Image> _imageCache = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, GodotTileSet> _tileSetCache = new Dictionary<string, GodotTileSet>(StringComparer.OrdinalIgnoreCase);
         private MapDefinition _map;
@@ -30,6 +33,8 @@ namespace MapEditorTool.UI
         private int _selectedCollisionPolygonIndex;
         private bool _collisionPolygonVertexDragging;
         private int _collisionPolygonDragVertexIndex;
+        private bool _collisionPolygonVertexDragMoved;
+        private CollisionPolygonTransformDrag _collisionPolygonTransformDrag;
         private Portal _dragPortal;
         private float _dragFromX;
         private float _dragFromY;
@@ -139,6 +144,9 @@ namespace MapEditorTool.UI
 
             if (CanEditCollisionPolygons() && e.Button == MouseButtons.Left)
             {
+                if (BeginCollisionPolygonTransform(e.Location))
+                    return;
+
                 if (BeginCollisionPolygonInteraction(e.Location))
                     return;
             }
@@ -200,6 +208,12 @@ namespace MapEditorTool.UI
             if (_map == null)
                 return;
 
+            if (_collisionPolygonTransformDrag != null && e.Button == MouseButtons.Left)
+            {
+                ApplyCollisionPolygonTransformDrag(e.Location);
+                return;
+            }
+
             if (_collisionPolygonVertexDragging && e.Button == MouseButtons.Left)
             {
                 ApplyCollisionPolygonVertexDrag(e.Location);
@@ -242,12 +256,30 @@ namespace MapEditorTool.UI
         {
             base.OnMouseUp(e);
 
-            if (_collisionPolygonVertexDragging)
+            if (_collisionPolygonTransformDrag != null)
             {
-                _collisionPolygonVertexDragging = false;
-                _collisionPolygonDragVertexIndex = -1;
+                var edited = _collisionPolygonTransformDrag.Moved;
+                var editName = _collisionPolygonTransformDrag.EditName;
+                var polygonIndex = _collisionPolygonTransformDrag.PolygonIndex;
+                _collisionPolygonTransformDrag = null;
                 Capture = false;
                 Cursor = Cursors.Default;
+                if (edited)
+                    RaiseCollisionPolygonEdited(editName, polygonIndex);
+                return;
+            }
+
+            if (_collisionPolygonVertexDragging)
+            {
+                var vertexMoved = _collisionPolygonVertexDragMoved;
+                var polygonIndex = _selectedCollisionPolygonIndex;
+                _collisionPolygonVertexDragging = false;
+                _collisionPolygonDragVertexIndex = -1;
+                _collisionPolygonVertexDragMoved = false;
+                Capture = false;
+                Cursor = Cursors.Default;
+                if (vertexMoved)
+                    RaiseCollisionPolygonEdited("Vertex moved", polygonIndex);
                 return;
             }
 
@@ -354,6 +386,7 @@ namespace MapEditorTool.UI
                     SelectCollisionPolygon(polygonIndex);
                     _collisionPolygonVertexDragging = true;
                     _collisionPolygonDragVertexIndex = vertexIndex;
+                    _collisionPolygonVertexDragMoved = false;
                     Capture = true;
                     Cursor = Cursors.SizeAll;
                     return true;
@@ -380,6 +413,116 @@ namespace MapEditorTool.UI
             return _collisionEditorTool == CollisionEditorTool.Select || _collisionEditorTool == CollisionEditorTool.Vertex;
         }
 
+        private bool BeginCollisionPolygonTransform(Point location)
+        {
+            if (!IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
+                return false;
+
+            if (_collisionEditorTool != CollisionEditorTool.Move &&
+                _collisionEditorTool != CollisionEditorTool.Rotate &&
+                _collisionEditorTool != CollisionEditorTool.Scale)
+                return false;
+
+            CollisionPolygonTransformHit hit;
+            if (!HitTestCollisionPolygonTransform(location, out hit))
+                return false;
+
+            var polygon = _collisionLayout.Polygons[_selectedCollisionPolygonIndex];
+            if (polygon == null || polygon.Count < 3)
+                return false;
+
+            var startMouseWorld = ScreenToWorld(location);
+            _collisionPolygonTransformDrag = new CollisionPolygonTransformDrag(
+                hit.Kind,
+                _selectedCollisionPolygonIndex,
+                ClonePolygonPoints(polygon),
+                GetCollisionPolygonBounds(polygon),
+                startMouseWorld,
+                hit.ScaleHandleKind);
+            Capture = true;
+            Cursor = hit.Kind == CollisionPolygonTransformKind.Rotate ? Cursors.Cross : Cursors.SizeAll;
+            return true;
+        }
+
+        private void ApplyCollisionPolygonTransformDrag(Point location)
+        {
+            if (_collisionPolygonTransformDrag == null)
+                return;
+            if (!IsValidCollisionPolygonIndex(_collisionPolygonTransformDrag.PolygonIndex))
+                return;
+
+            var polygon = _collisionLayout.Polygons[_collisionPolygonTransformDrag.PolygonIndex];
+            if (polygon == null || polygon.Count != _collisionPolygonTransformDrag.StartPoints.Count)
+                return;
+
+            var world = ScreenToWorld(location);
+            if (_collisionPolygonTransformDrag.Kind == CollisionPolygonTransformKind.Move)
+                ApplyCollisionPolygonMove(polygon, _collisionPolygonTransformDrag, world);
+            else if (_collisionPolygonTransformDrag.Kind == CollisionPolygonTransformKind.Rotate)
+                ApplyCollisionPolygonRotate(polygon, _collisionPolygonTransformDrag, world);
+            else if (_collisionPolygonTransformDrag.Kind == CollisionPolygonTransformKind.Scale)
+                ApplyCollisionPolygonScale(polygon, _collisionPolygonTransformDrag, world);
+
+            _collisionPolygonTransformDrag.Moved = true;
+            Invalidate();
+        }
+
+        private void ApplyCollisionPolygonMove(List<GodotVector2Data> polygon, CollisionPolygonTransformDrag drag, PointF world)
+        {
+            var dx = world.X - drag.StartMouseWorld.X;
+            var dy = world.Y - drag.StartMouseWorld.Y;
+            for (var i = 0; i < polygon.Count; i++)
+            {
+                var start = drag.StartPoints[i];
+                var clamped = ClampToRoom(start.X + dx, start.Y + dy);
+                polygon[i] = new GodotVector2Data { X = clamped.X, Y = clamped.Y };
+            }
+        }
+
+        private void ApplyCollisionPolygonRotate(List<GodotVector2Data> polygon, CollisionPolygonTransformDrag drag, PointF world)
+        {
+            var pivot = drag.StartBounds.Center;
+            var startAngle = Math.Atan2(drag.StartMouseWorld.Y - pivot.Y, drag.StartMouseWorld.X - pivot.X);
+            var currentAngle = Math.Atan2(world.Y - pivot.Y, world.X - pivot.X);
+            var radians = currentAngle - startAngle;
+            var cos = (float)Math.Cos(radians);
+            var sin = (float)Math.Sin(radians);
+            for (var i = 0; i < polygon.Count; i++)
+            {
+                var start = drag.StartPoints[i];
+                var x = start.X - pivot.X;
+                var y = start.Y - pivot.Y;
+                var clamped = ClampToRoom(pivot.X + x * cos - y * sin, pivot.Y + x * sin + y * cos);
+                polygon[i] = new GodotVector2Data { X = clamped.X, Y = clamped.Y };
+            }
+        }
+
+        private void ApplyCollisionPolygonScale(List<GodotVector2Data> polygon, CollisionPolygonTransformDrag drag, PointF world)
+        {
+            var pivot = drag.StartBounds.GetOppositeHandle(drag.ScaleHandleKind);
+            var startHandle = drag.StartBounds.GetHandle(drag.ScaleHandleKind);
+            var startDx = startHandle.X - pivot.X;
+            var startDy = startHandle.Y - pivot.Y;
+            var currentDx = world.X - pivot.X;
+            var currentDy = world.Y - pivot.Y;
+            var scaleX = Math.Abs(startDx) < 0.001f ? 1f : currentDx / startDx;
+            var scaleY = Math.Abs(startDy) < 0.001f ? 1f : currentDy / startDy;
+            scaleX = Clamp(scaleX, 0.05f, 20f);
+            scaleY = Clamp(scaleY, 0.05f, 20f);
+
+            if (!CollisionScaleHandleAffectsX(drag.ScaleHandleKind))
+                scaleX = 1f;
+            if (!CollisionScaleHandleAffectsY(drag.ScaleHandleKind))
+                scaleY = 1f;
+
+            for (var i = 0; i < polygon.Count; i++)
+            {
+                var start = drag.StartPoints[i];
+                var clamped = ClampToRoom(pivot.X + (start.X - pivot.X) * scaleX, pivot.Y + (start.Y - pivot.Y) * scaleY);
+                polygon[i] = new GodotVector2Data { X = clamped.X, Y = clamped.Y };
+            }
+        }
+
         private void ApplyCollisionPolygonVertexDrag(Point location)
         {
             if (!IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
@@ -398,8 +541,8 @@ namespace MapEditorTool.UI
                 return;
 
             polygon[_collisionPolygonDragVertexIndex] = new GodotVector2Data { X = world.X, Y = world.Y };
+            _collisionPolygonVertexDragMoved = true;
             Invalidate();
-            RaiseCollisionPolygonEdited("Vertex moved", _selectedCollisionPolygonIndex);
         }
 
         private void RemoveSelectedCollisionPolygon()
@@ -596,6 +739,68 @@ namespace MapEditorTool.UI
             return false;
         }
 
+        private bool HitTestCollisionPolygonTransform(Point location, out CollisionPolygonTransformHit hit)
+        {
+            hit = new CollisionPolygonTransformHit(CollisionPolygonTransformKind.Move, CollisionScaleHandleKind.BottomRight);
+            if (!IsValidCollisionPolygonIndex(_selectedCollisionPolygonIndex))
+                return false;
+
+            var polygon = _collisionLayout.Polygons[_selectedCollisionPolygonIndex];
+            if (polygon == null || polygon.Count < 3 || _map == null)
+                return false;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            var scale = bounds.Width / roomPixelWidth;
+            var polygonBounds = GetCollisionPolygonScreenBounds(polygon, bounds, scale);
+
+            if (_collisionEditorTool == CollisionEditorTool.Move)
+            {
+                var points = polygon
+                    .Where(point => point != null)
+                    .Select(point => new PointF(bounds.X + point.X * scale, bounds.Y + point.Y * scale))
+                    .ToArray();
+                if (points.Length >= 3 && PointInPolygon(points, location))
+                {
+                    hit = new CollisionPolygonTransformHit(CollisionPolygonTransformKind.Move, CollisionScaleHandleKind.BottomRight);
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (_collisionEditorTool == CollisionEditorTool.Scale)
+            {
+                var handles = GetScaleHandleRects(polygonBounds);
+                foreach (var pair in handles)
+                {
+                    if (!pair.Value.Contains(location))
+                        continue;
+
+                    hit = new CollisionPolygonTransformHit(CollisionPolygonTransformKind.Scale, pair.Key);
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (_collisionEditorTool == CollisionEditorTool.Rotate)
+            {
+                var rotateCenter = GetRotateHandleCenter(polygonBounds, scale);
+                var radius = Math.Max(5f, RotateHandleRadius * scale);
+                var dx = location.X - rotateCenter.X;
+                var dy = location.Y - rotateCenter.Y;
+                if (dx * dx + dy * dy <= radius * radius)
+                {
+                    hit = new CollisionPolygonTransformHit(CollisionPolygonTransformKind.Rotate, CollisionScaleHandleKind.BottomRight);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private Portal HitTestPortal(Point point)
         {
             if (_map == null || _map.Portals == null)
@@ -688,6 +893,123 @@ namespace MapEditorTool.UI
             }
 
             return inside;
+        }
+
+        private CollisionPolygonBounds GetCollisionPolygonBounds(List<GodotVector2Data> polygon)
+        {
+            var minX = float.PositiveInfinity;
+            var minY = float.PositiveInfinity;
+            var maxX = float.NegativeInfinity;
+            var maxY = float.NegativeInfinity;
+
+            foreach (var point in polygon)
+            {
+                if (point == null)
+                    continue;
+
+                minX = Math.Min(minX, point.X);
+                minY = Math.Min(minY, point.Y);
+                maxX = Math.Max(maxX, point.X);
+                maxY = Math.Max(maxY, point.Y);
+            }
+
+            if (float.IsInfinity(minX) || float.IsInfinity(minY) || float.IsInfinity(maxX) || float.IsInfinity(maxY))
+                return new CollisionPolygonBounds(0f, 0f, 0f, 0f);
+
+            return new CollisionPolygonBounds(minX, minY, maxX, maxY);
+        }
+
+        private static List<GodotVector2Data> ClonePolygonPoints(List<GodotVector2Data> polygon)
+        {
+            var clone = new List<GodotVector2Data>();
+            foreach (var point in polygon)
+            {
+                if (point == null)
+                    clone.Add(new GodotVector2Data());
+                else
+                    clone.Add(new GodotVector2Data { X = point.X, Y = point.Y });
+            }
+
+            return clone;
+        }
+
+        private static RectangleF GetCollisionPolygonScreenBounds(List<GodotVector2Data> polygon, RectangleF roomBounds, float scale)
+        {
+            var worldBounds = GetStaticCollisionPolygonBounds(polygon);
+            return new RectangleF(
+                roomBounds.X + worldBounds.MinX * scale,
+                roomBounds.Y + worldBounds.MinY * scale,
+                Math.Max(1f, (worldBounds.MaxX - worldBounds.MinX) * scale),
+                Math.Max(1f, (worldBounds.MaxY - worldBounds.MinY) * scale));
+        }
+
+        private static CollisionPolygonBounds GetStaticCollisionPolygonBounds(List<GodotVector2Data> polygon)
+        {
+            var minX = float.PositiveInfinity;
+            var minY = float.PositiveInfinity;
+            var maxX = float.NegativeInfinity;
+            var maxY = float.NegativeInfinity;
+
+            foreach (var point in polygon)
+            {
+                if (point == null)
+                    continue;
+
+                minX = Math.Min(minX, point.X);
+                minY = Math.Min(minY, point.Y);
+                maxX = Math.Max(maxX, point.X);
+                maxY = Math.Max(maxY, point.Y);
+            }
+
+            if (float.IsInfinity(minX) || float.IsInfinity(minY) || float.IsInfinity(maxX) || float.IsInfinity(maxY))
+                return new CollisionPolygonBounds(0f, 0f, 0f, 0f);
+
+            return new CollisionPolygonBounds(minX, minY, maxX, maxY);
+        }
+
+        private static Dictionary<CollisionScaleHandleKind, RectangleF> GetScaleHandleRects(RectangleF bounds)
+        {
+            var size = TransformHandleSize;
+            var half = size / 2f;
+            var centerX = bounds.X + bounds.Width / 2f;
+            var centerY = bounds.Y + bounds.Height / 2f;
+
+            return new Dictionary<CollisionScaleHandleKind, RectangleF>
+            {
+                { CollisionScaleHandleKind.TopLeft, new RectangleF(bounds.Left - half, bounds.Top - half, size, size) },
+                { CollisionScaleHandleKind.Top, new RectangleF(centerX - half, bounds.Top - half, size, size) },
+                { CollisionScaleHandleKind.TopRight, new RectangleF(bounds.Right - half, bounds.Top - half, size, size) },
+                { CollisionScaleHandleKind.Right, new RectangleF(bounds.Right - half, centerY - half, size, size) },
+                { CollisionScaleHandleKind.BottomRight, new RectangleF(bounds.Right - half, bounds.Bottom - half, size, size) },
+                { CollisionScaleHandleKind.Bottom, new RectangleF(centerX - half, bounds.Bottom - half, size, size) },
+                { CollisionScaleHandleKind.BottomLeft, new RectangleF(bounds.Left - half, bounds.Bottom - half, size, size) },
+                { CollisionScaleHandleKind.Left, new RectangleF(bounds.Left - half, centerY - half, size, size) }
+            };
+        }
+
+        private static PointF GetRotateHandleCenter(RectangleF bounds, float scale)
+        {
+            return new PointF(bounds.X + bounds.Width / 2f, bounds.Y - RotateHandleOffset * scale);
+        }
+
+        private static bool CollisionScaleHandleAffectsX(CollisionScaleHandleKind kind)
+        {
+            return kind == CollisionScaleHandleKind.Left ||
+                kind == CollisionScaleHandleKind.Right ||
+                kind == CollisionScaleHandleKind.TopLeft ||
+                kind == CollisionScaleHandleKind.TopRight ||
+                kind == CollisionScaleHandleKind.BottomLeft ||
+                kind == CollisionScaleHandleKind.BottomRight;
+        }
+
+        private static bool CollisionScaleHandleAffectsY(CollisionScaleHandleKind kind)
+        {
+            return kind == CollisionScaleHandleKind.Top ||
+                kind == CollisionScaleHandleKind.Bottom ||
+                kind == CollisionScaleHandleKind.TopLeft ||
+                kind == CollisionScaleHandleKind.TopRight ||
+                kind == CollisionScaleHandleKind.BottomLeft ||
+                kind == CollisionScaleHandleKind.BottomRight;
         }
 
         private void DrawTextures(Graphics graphics, RectangleF bounds, int roomPixelWidth, int roomPixelHeight)
@@ -895,6 +1217,45 @@ namespace MapEditorTool.UI
                         graphics.FillEllipse(handleBrush, rect);
                         graphics.DrawEllipse(handlePen, rect);
                     }
+
+                    DrawCollisionPolygonTransformGizmo(graphics, polygon, bounds, scale);
+                }
+            }
+        }
+
+        private void DrawCollisionPolygonTransformGizmo(Graphics graphics, List<GodotVector2Data> polygon, RectangleF roomBounds, float scale)
+        {
+            if (polygon == null || polygon.Count < 3)
+                return;
+            if (_collisionEditorTool != CollisionEditorTool.Move &&
+                _collisionEditorTool != CollisionEditorTool.Rotate &&
+                _collisionEditorTool != CollisionEditorTool.Scale)
+                return;
+
+            var bounds = GetCollisionPolygonScreenBounds(polygon, roomBounds, scale);
+            using (var boxPen = new Pen(Color.FromArgb(220, 255, 255, 255), 1.5f))
+            using (var handleFill = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
+            using (var handleBorder = new Pen(Color.FromArgb(220, 35, 40, 48), 1f))
+            using (var rotatePen = new Pen(Color.FromArgb(220, 255, 255, 255), 1.5f))
+            {
+                graphics.DrawRectangle(boxPen, bounds.X, bounds.Y, bounds.Width, bounds.Height);
+
+                if (_collisionEditorTool == CollisionEditorTool.Scale)
+                {
+                    foreach (var rect in GetScaleHandleRects(bounds).Values)
+                    {
+                        graphics.FillRectangle(handleFill, rect);
+                        graphics.DrawRectangle(handleBorder, rect.X, rect.Y, rect.Width, rect.Height);
+                    }
+                }
+
+                if (_collisionEditorTool == CollisionEditorTool.Rotate)
+                {
+                    var rotateCenter = GetRotateHandleCenter(bounds, scale);
+                    var topCenter = new PointF(bounds.X + bounds.Width / 2f, bounds.Y);
+                    var radius = Math.Max(5f, RotateHandleRadius * scale);
+                    graphics.DrawLine(rotatePen, topCenter, rotateCenter);
+                    graphics.DrawEllipse(rotatePen, rotateCenter.X - radius, rotateCenter.Y - radius, radius * 2f, radius * 2f);
                 }
             }
         }
@@ -1117,6 +1478,147 @@ namespace MapEditorTool.UI
         Scale = 4,
         AddBox = 5,
         Remove = 6
+    }
+
+    internal enum CollisionPolygonTransformKind
+    {
+        Move = 0,
+        Rotate = 1,
+        Scale = 2
+    }
+
+    internal enum CollisionScaleHandleKind
+    {
+        TopLeft = 0,
+        Top = 1,
+        TopRight = 2,
+        Right = 3,
+        BottomRight = 4,
+        Bottom = 5,
+        BottomLeft = 6,
+        Left = 7
+    }
+
+    internal struct CollisionPolygonTransformHit
+    {
+        public CollisionPolygonTransformHit(CollisionPolygonTransformKind kind, CollisionScaleHandleKind scaleHandleKind)
+        {
+            Kind = kind;
+            ScaleHandleKind = scaleHandleKind;
+        }
+
+        public CollisionPolygonTransformKind Kind { get; private set; }
+        public CollisionScaleHandleKind ScaleHandleKind { get; private set; }
+    }
+
+    internal struct CollisionPolygonBounds
+    {
+        public CollisionPolygonBounds(float minX, float minY, float maxX, float maxY)
+        {
+            MinX = minX;
+            MinY = minY;
+            MaxX = maxX;
+            MaxY = maxY;
+        }
+
+        public float MinX { get; private set; }
+        public float MinY { get; private set; }
+        public float MaxX { get; private set; }
+        public float MaxY { get; private set; }
+
+        public PointF Center
+        {
+            get { return new PointF((MinX + MaxX) / 2f, (MinY + MaxY) / 2f); }
+        }
+
+        public PointF GetHandle(CollisionScaleHandleKind kind)
+        {
+            switch (kind)
+            {
+                case CollisionScaleHandleKind.TopLeft:
+                    return new PointF(MinX, MinY);
+                case CollisionScaleHandleKind.Top:
+                    return new PointF((MinX + MaxX) / 2f, MinY);
+                case CollisionScaleHandleKind.TopRight:
+                    return new PointF(MaxX, MinY);
+                case CollisionScaleHandleKind.Right:
+                    return new PointF(MaxX, (MinY + MaxY) / 2f);
+                case CollisionScaleHandleKind.BottomRight:
+                    return new PointF(MaxX, MaxY);
+                case CollisionScaleHandleKind.Bottom:
+                    return new PointF((MinX + MaxX) / 2f, MaxY);
+                case CollisionScaleHandleKind.BottomLeft:
+                    return new PointF(MinX, MaxY);
+                case CollisionScaleHandleKind.Left:
+                    return new PointF(MinX, (MinY + MaxY) / 2f);
+                default:
+                    return new PointF(MaxX, MaxY);
+            }
+        }
+
+        public PointF GetOppositeHandle(CollisionScaleHandleKind kind)
+        {
+            switch (kind)
+            {
+                case CollisionScaleHandleKind.TopLeft:
+                    return GetHandle(CollisionScaleHandleKind.BottomRight);
+                case CollisionScaleHandleKind.Top:
+                    return GetHandle(CollisionScaleHandleKind.Bottom);
+                case CollisionScaleHandleKind.TopRight:
+                    return GetHandle(CollisionScaleHandleKind.BottomLeft);
+                case CollisionScaleHandleKind.Right:
+                    return GetHandle(CollisionScaleHandleKind.Left);
+                case CollisionScaleHandleKind.BottomRight:
+                    return GetHandle(CollisionScaleHandleKind.TopLeft);
+                case CollisionScaleHandleKind.Bottom:
+                    return GetHandle(CollisionScaleHandleKind.Top);
+                case CollisionScaleHandleKind.BottomLeft:
+                    return GetHandle(CollisionScaleHandleKind.TopRight);
+                case CollisionScaleHandleKind.Left:
+                    return GetHandle(CollisionScaleHandleKind.Right);
+                default:
+                    return Center;
+            }
+        }
+    }
+
+    internal sealed class CollisionPolygonTransformDrag
+    {
+        public CollisionPolygonTransformDrag(
+            CollisionPolygonTransformKind kind,
+            int polygonIndex,
+            List<GodotVector2Data> startPoints,
+            CollisionPolygonBounds startBounds,
+            PointF startMouseWorld,
+            CollisionScaleHandleKind scaleHandleKind)
+        {
+            Kind = kind;
+            PolygonIndex = polygonIndex;
+            StartPoints = startPoints;
+            StartBounds = startBounds;
+            StartMouseWorld = startMouseWorld;
+            ScaleHandleKind = scaleHandleKind;
+        }
+
+        public CollisionPolygonTransformKind Kind { get; private set; }
+        public int PolygonIndex { get; private set; }
+        public List<GodotVector2Data> StartPoints { get; private set; }
+        public CollisionPolygonBounds StartBounds { get; private set; }
+        public PointF StartMouseWorld { get; private set; }
+        public CollisionScaleHandleKind ScaleHandleKind { get; private set; }
+        public bool Moved { get; set; }
+
+        public string EditName
+        {
+            get
+            {
+                if (Kind == CollisionPolygonTransformKind.Rotate)
+                    return "Polygon rotated";
+                if (Kind == CollisionPolygonTransformKind.Scale)
+                    return "Polygon scaled";
+                return "Polygon moved";
+            }
+        }
     }
 
     internal sealed class CollisionLayoutEditedEventArgs : EventArgs

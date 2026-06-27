@@ -348,6 +348,15 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("RemoveSelectedCollisionPolygon")
                     && text.Contains("PointInPolygon"),
                 "MapEditorTool map preview can select, vertex-drag, and remove collision layout polygons in memory.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-polygon-transform", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("BeginCollisionPolygonTransform")
+                    && text.Contains("ApplyCollisionPolygonTransformDrag")
+                    && text.Contains("ApplyCollisionPolygonMove")
+                    && text.Contains("ApplyCollisionPolygonRotate")
+                    && text.Contains("ApplyCollisionPolygonScale")
+                    && text.Contains("DrawCollisionPolygonTransformGizmo")
+                    && text.Contains("CollisionPolygonTransformDrag"),
+                "MapEditorTool map preview can move, rotate, and scale selected collision layout polygons in memory.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-layout-polygon-edit", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("MapPreviewCanvasCollisionLayoutPolygonSelected")
                     && text.Contains("MapPreviewCanvasCollisionLayoutPolygonEdited")
