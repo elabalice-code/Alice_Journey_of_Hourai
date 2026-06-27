@@ -325,6 +325,21 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("SetCollisionEditorState")
                     && text.Contains("DrawEditorInfo"),
                 "MapEditorTool map preview can display the active collision editor mode and tool state.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-tileset-collision-selection", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("DrawTileCollisionPolygons")
+                    && text.Contains("HitTestTileCollisionPolygon")
+                    && text.Contains("TileCollisionSelected")
+                    && text.Contains("TileCollisionSelection")
+                    && text.Contains("BuildTilePhysicsPolygonKey")
+                    && text.Contains("BuildTileCollisionScreenPoints"),
+                "MapEditorTool map preview can draw and select TileSet collision polygons for imported tile layers.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-tileset-collision-selection", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasTileCollisionSelected")
+                    && text.Contains("TileCollisionSelected")
+                    && text.Contains("Tile collision selected")
+                    && text.Contains("Tile collision selection cleared")
+                    && text.Contains("GetSelectedCollisionEditorMode() == CollisionEditorMode.TileSetCollision"),
+                "MapEditorTool UI consumes TileSet collision selection events and can show TileSet collision overlay without requiring a collision layout file.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-collision-paint", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("CollisionLayoutEdited")
                     && text.Contains("ApplyCollisionPaintAt")

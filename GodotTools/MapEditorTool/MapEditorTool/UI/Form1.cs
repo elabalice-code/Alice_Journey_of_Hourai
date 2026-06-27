@@ -301,6 +301,7 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.CollisionLayoutEdited += MapPreviewCanvasCollisionLayoutEdited;
             _mapPreviewCanvas.CollisionLayoutPolygonSelected += MapPreviewCanvasCollisionLayoutPolygonSelected;
             _mapPreviewCanvas.CollisionLayoutPolygonEdited += MapPreviewCanvasCollisionLayoutPolygonEdited;
+            _mapPreviewCanvas.TileCollisionSelected += MapPreviewCanvasTileCollisionSelected;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -492,6 +493,16 @@ namespace MapEditorTool.UI
                 e.EditName +
                 ": polygon " + e.PolygonIndex +
                 ". Use Save to write the collision file.");
+            statusText.Text = _viewModel.Snapshot.StatusText;
+        }
+
+        private void MapPreviewCanvasTileCollisionSelected(object sender, TileCollisionSelectedEventArgs e)
+        {
+            if (e == null || e.Selection == null)
+                _viewModel.SetStatusText("Tile collision selection cleared.");
+            else
+                _viewModel.SetStatusText("Tile collision selected: " + e.Selection.FormatSummary());
+
             statusText.Text = _viewModel.Snapshot.StatusText;
         }
 
@@ -1410,6 +1421,13 @@ namespace MapEditorTool.UI
 
             try
             {
+                if (GetSelectedCollisionEditorMode() == CollisionEditorMode.TileSetCollision)
+                {
+                    SetCollisionOverlay(null, GetSelectedCollisionLayoutTarget(), true);
+                    _undoManager.Clear();
+                    return;
+                }
+
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
                 var target = GetSelectedCollisionLayoutTarget();
                 var loaded = _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, ensureDefaultPath);
