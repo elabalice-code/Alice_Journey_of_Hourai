@@ -465,6 +465,13 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PushCollisionLayoutUndo")
                     && text.Contains("ApplyCollisionLayoutUndoSnapshot"),
                 "MapEditorTool UI can undo and redo current in-memory collision layout edits without writing external files.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-node-position-undo-redo", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("NodePositionUndoAction")
+                    && text.Contains("PushNodePositionUndo")
+                    && text.Contains("ApplyNodePositionUndoSnapshot")
+                    && text.Contains("PatchNodePosition")
+                    && text.Contains("Scene file updated"),
+                "MapEditorTool UI can undo and redo portal/entity position edits while patching the scene file through ScenePatchExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
                 text => text.Contains("LinksPreviewCanvas")
                     && text.Contains("DrawEdges")

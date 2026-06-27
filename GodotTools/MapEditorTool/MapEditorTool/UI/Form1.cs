@@ -344,6 +344,14 @@ namespace MapEditorTool.UI
                 var godotRoot = ResolveGodotRootForEditor();
                 _portalEditingExecutor.ApplyPortalPropertyChange(godotRoot, selectedMap, e.Portal, "X");
                 e.Accepted = true;
+                PushNodePositionUndo(
+                    "Move portal",
+                    selectedMap,
+                    e.Portal.NodePath,
+                    e.FromX,
+                    e.FromY,
+                    e.ToX,
+                    e.ToY);
                 _viewModel.MarkSelectedMapEdited("Portal position");
                 _viewModel.SetStatusText("Portal moved: " + FormatPortalName(e.Portal));
                 mapPropertyGrid.Refresh();
@@ -384,6 +392,14 @@ namespace MapEditorTool.UI
                 var sceneFilePath = ResolveGodotResourcePath(godotRoot, selectedMap.ScenePath);
                 var result = _scenePatchExecutor.PatchNodePosition(sceneFilePath, e.Entity.NodePath, e.ToX, e.ToY);
                 e.Accepted = true;
+                PushNodePositionUndo(
+                    "Move entity",
+                    selectedMap,
+                    e.Entity.NodePath,
+                    e.FromX,
+                    e.FromY,
+                    e.ToX,
+                    e.ToY);
                 _viewModel.MarkSelectedMapEdited("Entity position");
                 _viewModel.SetStatusText("Entity moved: " + FormatEntityName(e.Entity) + " (" + result.NewRawValue + ")");
                 mapPropertyGrid.Refresh();
@@ -1547,6 +1563,33 @@ namespace MapEditorTool.UI
                 ApplyCollisionLayoutUndoSnapshot));
         }
 
+        private void PushNodePositionUndo(
+            string name,
+            MapDefinition map,
+            string nodePath,
+            float fromX,
+            float fromY,
+            float toX,
+            float toY)
+        {
+            if (_isReplayingUndo)
+                return;
+            if (map == null || string.IsNullOrWhiteSpace(nodePath))
+                return;
+            if (Math.Abs(fromX - toX) < 0.001f && Math.Abs(fromY - toY) < 0.001f)
+                return;
+
+            _undoManager.Push(new NodePositionUndoAction(
+                string.IsNullOrWhiteSpace(name) ? "Move node" : name,
+                map,
+                nodePath,
+                fromX,
+                fromY,
+                toX,
+                toY,
+                ApplyNodePositionUndoSnapshot));
+        }
+
         private void UndoLastAction()
         {
             if (!_undoManager.CanUndo)
@@ -1559,8 +1602,9 @@ namespace MapEditorTool.UI
             try
             {
                 var name = _undoManager.PeekUndoName();
+                var completionHint = _undoManager.PeekUndoCompletionHint();
                 if (_undoManager.TryUndo())
-                    _viewModel.SetStatusText("Undone: " + name + ". Use Save to write the collision file.");
+                    _viewModel.SetStatusText("Undone: " + name + FormatUndoCompletionHint(completionHint));
             }
             finally
             {
@@ -1581,8 +1625,9 @@ namespace MapEditorTool.UI
             try
             {
                 var name = _undoManager.PeekRedoName();
+                var completionHint = _undoManager.PeekRedoCompletionHint();
                 if (_undoManager.TryRedo())
-                    _viewModel.SetStatusText("Redone: " + name + ". Use Save to write the collision file.");
+                    _viewModel.SetStatusText("Redone: " + name + FormatUndoCompletionHint(completionHint));
             }
             finally
             {
@@ -1591,12 +1636,47 @@ namespace MapEditorTool.UI
             }
         }
 
+        private static string FormatUndoCompletionHint(string completionHint)
+        {
+            return string.IsNullOrWhiteSpace(completionHint) ? string.Empty : ". " + completionHint;
+        }
+
         private void ApplyCollisionLayoutUndoSnapshot(
             CollisionLayoutTarget target,
             MapEditorTool.Executor.MapCreation.CollisionLayoutData layout)
         {
             SetCollisionOverlay(CloneCollisionLayoutData(layout), target, true);
             _viewModel.MarkSelectedMapEdited("Collision layout undo");
+        }
+
+        private void ApplyNodePositionUndoSnapshot(MapDefinition map, string nodePath, float x, float y)
+        {
+            if (map == null || string.IsNullOrWhiteSpace(nodePath))
+                return;
+
+            var portal = map.Portals == null
+                ? null
+                : map.Portals.FirstOrDefault(item => item != null && string.Equals(item.NodePath, nodePath, StringComparison.Ordinal));
+            if (portal != null)
+            {
+                portal.X = x;
+                portal.Y = y;
+            }
+            else if (map.Entities != null)
+            {
+                var entity = map.Entities.FirstOrDefault(item => item != null && string.Equals(item.NodePath, nodePath, StringComparison.Ordinal));
+                if (entity != null)
+                {
+                    entity.X = x;
+                    entity.Y = y;
+                }
+            }
+
+            var godotRoot = ResolveGodotRootForEditor();
+            var sceneFilePath = ResolveGodotResourcePath(godotRoot, map.ScenePath);
+            _scenePatchExecutor.PatchNodePosition(sceneFilePath, nodePath, x, y);
+            mapPropertyGrid.Refresh();
+            _viewModel.MarkSelectedMapEdited("Node position undo");
         }
 
         private void MapToolSelectionChanged(object sender, EventArgs e)
@@ -2569,6 +2649,7 @@ namespace MapEditorTool.UI
         private interface IUndoableAction
         {
             string Name { get; }
+            string CompletionHint { get; }
             void Undo();
             void Redo();
         }
@@ -2605,9 +2686,19 @@ namespace MapEditorTool.UI
                 return _undo.Count == 0 ? string.Empty : _undo.Peek().Name;
             }
 
+            public string PeekUndoCompletionHint()
+            {
+                return _undo.Count == 0 ? string.Empty : _undo.Peek().CompletionHint;
+            }
+
             public string PeekRedoName()
             {
                 return _redo.Count == 0 ? string.Empty : _redo.Peek().Name;
+            }
+
+            public string PeekRedoCompletionHint()
+            {
+                return _redo.Count == 0 ? string.Empty : _redo.Peek().CompletionHint;
             }
 
             public void Push(IUndoableAction action)
@@ -2665,6 +2756,11 @@ namespace MapEditorTool.UI
 
             public string Name { get; private set; }
 
+            public string CompletionHint
+            {
+                get { return "Use Save to write the collision file."; }
+            }
+
             public void Undo()
             {
                 if (_apply != null)
@@ -2675,6 +2771,56 @@ namespace MapEditorTool.UI
             {
                 if (_apply != null)
                     _apply(_target, CloneCollisionLayoutData(_after));
+            }
+        }
+
+        private sealed class NodePositionUndoAction : IUndoableAction
+        {
+            private readonly MapDefinition _map;
+            private readonly string _nodePath;
+            private readonly float _fromX;
+            private readonly float _fromY;
+            private readonly float _toX;
+            private readonly float _toY;
+            private readonly Action<MapDefinition, string, float, float> _apply;
+
+            public NodePositionUndoAction(
+                string name,
+                MapDefinition map,
+                string nodePath,
+                float fromX,
+                float fromY,
+                float toX,
+                float toY,
+                Action<MapDefinition, string, float, float> apply)
+            {
+                Name = name ?? string.Empty;
+                _map = map;
+                _nodePath = nodePath ?? string.Empty;
+                _fromX = fromX;
+                _fromY = fromY;
+                _toX = toX;
+                _toY = toY;
+                _apply = apply;
+            }
+
+            public string Name { get; private set; }
+
+            public string CompletionHint
+            {
+                get { return "Scene file updated."; }
+            }
+
+            public void Undo()
+            {
+                if (_apply != null)
+                    _apply(_map, _nodePath, _fromX, _fromY);
+            }
+
+            public void Redo()
+            {
+                if (_apply != null)
+                    _apply(_map, _nodePath, _toX, _toY);
             }
         }
     }
