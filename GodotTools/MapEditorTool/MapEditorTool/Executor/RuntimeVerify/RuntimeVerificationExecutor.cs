@@ -523,6 +523,13 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PushCollisionLayoutUndo")
                     && text.Contains("ApplyCollisionLayoutUndoSnapshot"),
                 "MapEditorTool UI can undo and redo current in-memory collision layout edits without writing external files.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-global-undo-redo-shortcuts", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("protected override bool ProcessCmdKey")
+                    && text.Contains("Keys.Control | Keys.Z")
+                    && text.Contains("Keys.Control | Keys.Y")
+                    && text.Contains("UndoLastAction")
+                    && text.Contains("RedoLastAction"),
+                "MapEditorTool captures Ctrl+Z and Ctrl+Y at the form level so undo/redo still work when child controls own focus.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-node-position-undo-redo", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("NodePositionUndoAction")
                     && text.Contains("PushNodePositionUndo")

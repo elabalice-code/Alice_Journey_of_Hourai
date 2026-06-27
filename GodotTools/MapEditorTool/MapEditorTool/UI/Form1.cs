@@ -1909,6 +1909,23 @@ namespace MapEditorTool.UI
             }
         }
 
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == (Keys.Control | Keys.Z))
+            {
+                UndoLastAction();
+                return true;
+            }
+
+            if (keyData == (Keys.Control | Keys.Y))
+            {
+                RedoLastAction();
+                return true;
+            }
+
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
         private static string FormatUndoCompletionHint(string completionHint)
         {
             return string.IsNullOrWhiteSpace(completionHint) ? string.Empty : ". " + completionHint;
