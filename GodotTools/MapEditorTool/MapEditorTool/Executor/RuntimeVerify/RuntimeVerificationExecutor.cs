@@ -572,6 +572,14 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("Deleted link")
                     && text.Contains("ProjectDirty"),
                 "MapEditorTool ViewModel owns pure project link add/remove state updates.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-model-propertygrid-metadata", "GodotTools/MapEditorTool/MapEditorTool/Models/MapProject.cs",
+                text => text.Contains("[DisplayName(\"Scene Path\")]")
+                    && text.Contains("[Category(\"Textures\")]")
+                    && text.Contains("[Category(\"Collision\")]")
+                    && text.Contains("[Description(\"Node path inside the .tscn file")
+                    && text.Contains("[DisplayName(\"Target Map\")]")
+                    && text.Contains("[DisplayName(\"Map ID\")]"),
+                "MapEditorTool model exposes English PropertyGrid display names, categories, and descriptions for migrated editor objects.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-list-and-grid-tooltips", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("ToolTip")
                     && text.Contains("MapsListMouseMove")
