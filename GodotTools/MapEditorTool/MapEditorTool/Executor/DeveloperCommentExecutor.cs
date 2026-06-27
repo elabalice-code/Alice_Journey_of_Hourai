@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 
@@ -23,7 +24,7 @@ namespace MapEditorTool.Executor
 
         public void WriteComment(string source, string comment)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_commentLogPath));
+            EnsureCommentLogFile();
 
             var safeComment = (comment ?? string.Empty)
                 .Replace("\r", "\\r")
@@ -35,6 +36,28 @@ namespace MapEditorTool.Executor
                 safeComment);
 
             File.AppendAllText(_commentLogPath, line + Environment.NewLine, Encoding.UTF8);
+        }
+
+        public string EnsureCommentLogFile()
+        {
+            var directory = Path.GetDirectoryName(_commentLogPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+            if (!File.Exists(_commentLogPath))
+                File.WriteAllText(_commentLogPath, string.Empty, Encoding.UTF8);
+
+            return _commentLogPath;
+        }
+
+        public string OpenCommentLog()
+        {
+            var path = EnsureCommentLogFile();
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+            return path;
         }
     }
 }

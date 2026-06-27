@@ -14,6 +14,7 @@ namespace MapEditorTool.ViewModel
         private readonly DeveloperCommentSignalMachine _developerCommentMachine = new DeveloperCommentSignalMachine();
         private readonly MapEditorUiSnapshot _snapshot;
         private MapProject _currentProject;
+        private int _selectedMapIndex;
 
         private MapEditorShellViewModel()
         {
@@ -64,6 +65,18 @@ namespace MapEditorTool.ViewModel
         public bool HasCurrentProject
         {
             get { return _currentProject != null && _currentProject.Maps != null && _currentProject.Maps.Count > 0; }
+        }
+
+        public MapDefinition SelectedMap
+        {
+            get
+            {
+                if (!HasCurrentProject)
+                    return null;
+                if (_selectedMapIndex < 0 || _selectedMapIndex >= _currentProject.Maps.Count)
+                    return null;
+                return _currentProject.Maps[_selectedMapIndex];
+            }
         }
 
         public static MapEditorShellViewModel CreateShellDefaults()
@@ -146,10 +159,74 @@ namespace MapEditorTool.ViewModel
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
+        public void SelectMapByIndex(int index)
+        {
+            if (!HasCurrentProject)
+            {
+                _selectedMapIndex = -1;
+                _snapshot.SelectedMapIndex = -1;
+                _snapshot.MapState = new MapShellState();
+                _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+                return;
+            }
+
+            if (index < 0 || index >= _currentProject.Maps.Count)
+                index = 0;
+
+            _selectedMapIndex = index;
+            _snapshot.SelectedMapIndex = _selectedMapIndex;
+            _snapshot.MapState = BuildMapState(SelectedMap);
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void AddMap(MapDefinition map)
+        {
+            if (map == null)
+                return;
+
+            if (_currentProject == null)
+                _currentProject = new MapProject();
+            if (_currentProject.Maps == null)
+                _currentProject.Maps = new List<MapDefinition>();
+
+            _currentProject.Maps.Add(map);
+            _selectedMapIndex = _currentProject.Maps.Count - 1;
+            RefreshProjectSnapshot();
+            _snapshot.ProjectDirty = true;
+            _snapshot.StatusText = "Added map: " + FormatMapName(map);
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void RemoveSelectedMap()
+        {
+            var selected = SelectedMap;
+            if (selected == null)
+                return;
+
+            _currentProject.RemoveMapById(selected.Id);
+            if (_selectedMapIndex >= _currentProject.Maps.Count)
+                _selectedMapIndex = _currentProject.Maps.Count - 1;
+            if (_currentProject.Maps.Count == 0)
+                _selectedMapIndex = -1;
+
+            RefreshProjectSnapshot();
+            _snapshot.ProjectDirty = true;
+            _snapshot.StatusText = "Removed map: " + FormatMapName(selected);
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
         private void SetCurrentProject(MapProject project, string projectPath, bool dirty)
         {
             _currentProject = project ?? new MapProject();
+            _selectedMapIndex = HasCurrentProject ? 0 : -1;
+            RefreshProjectSnapshot();
+            _snapshot.CurrentProjectPath = projectPath ?? string.Empty;
+            _snapshot.ProjectDirty = dirty;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
 
+        private void RefreshProjectSnapshot()
+        {
             _snapshot.MapNames = _currentProject.Maps
                 .Select(FormatMapName)
                 .ToArray();
@@ -158,11 +235,9 @@ namespace MapEditorTool.ViewModel
                 .Select(link => link.DisplayName)
                 .ToArray();
 
-            _snapshot.MapState = BuildMapState(_currentProject.Maps.FirstOrDefault());
+            _snapshot.SelectedMapIndex = _selectedMapIndex;
+            _snapshot.MapState = BuildMapState(SelectedMap);
             _snapshot.LinkState = BuildLinkState(_currentProject.Links.FirstOrDefault());
-            _snapshot.CurrentProjectPath = projectPath ?? string.Empty;
-            _snapshot.ProjectDirty = dirty;
-            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
         public void SetStatusText(string statusText)

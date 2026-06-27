@@ -33,6 +33,7 @@ namespace MapEditorTool.ViewModel
         public bool ProjectDirty { get; set; }
         public int SignalCount { get; set; }
         public DateTimeOffset LastUpdatedAt { get; set; }
+        public int SelectedMapIndex { get; set; }
         public string[] MapNames { get; set; }
         public string[] LinkNames { get; set; }
         public MapShellState MapState { get; set; }

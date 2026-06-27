@@ -47,9 +47,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Executor\CollisionLayout\CollisionLayoutExecutor.cs" />
+    <Compile Include="Executor\CollisionLayout\CollisionLayoutModels.cs" />
     <Compile Include="Executor\DeveloperCommentExecutor.cs" />
+    <Compile Include="Executor\ForegroundTextureCollision\ForegroundTextureCollisionExecutor.cs" />
+    <Compile Include="Executor\ForegroundTextureCollision\ForegroundTextureCollisionHelper.cs" />
+    <Compile Include="Executor\ForegroundTextureCollision\ForegroundTextureCollisionModels.cs" />
     <Compile Include="Executor\GameSettings\GameSettingsExecutor.cs" />
     <Compile Include="Executor\GameSettings\GameSettingsModels.cs" />
+    <Compile Include="Executor\MapApply\MapApplyExecutor.cs" />
+    <Compile Include="Executor\MapApply\MapApplyModels.cs" />
     <Compile Include="Executor\MapCreation\MapCreationExecutor.cs" />
     <Compile Include="Executor\MapCreation\MapCreationModels.cs" />
     <Compile Include="Executor\MapDeletion\MapDeletionExecutor.cs" />

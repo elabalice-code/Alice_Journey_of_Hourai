@@ -194,6 +194,38 @@ namespace MapEditorTool.Executor.ScenePatch
             };
         }
 
+        public ScenePatchResult PatchBackgroundTileLayerVisibility(string sceneFilePath, MapDefinition map)
+        {
+            if (map == null)
+                throw new ArgumentNullException("map");
+
+            var scene = TscnParser.ParseFile(ValidateScenePatchInput(sceneFilePath, "Map"));
+            var patchedLayerCount = 0;
+            foreach (var node in scene.Nodes)
+            {
+                if (!string.Equals(node.Type, "TileMapLayer", StringComparison.Ordinal))
+                    continue;
+                if (!IsBackgroundTileLayerName(node.Name))
+                    continue;
+
+                node.RawProps["visible"] = map.BackgroundTileLayerVisible ? "true" : "false";
+                patchedLayerCount++;
+            }
+
+            var dirty = patchedLayerCount > 0 && TscnWriter.PatchFile(sceneFilePath, scene, new[] { "visible" });
+            SyncBackgroundTileLayerVisibility(map);
+
+            return new ScenePatchResult
+            {
+                SceneFilePath = Path.GetFullPath(sceneFilePath),
+                NodePath = "TileMapLayer(background)",
+                Patched = dirty,
+                PatchedKey = "visible",
+                NewRawValue = "backgroundTileLayerVisible=" + map.BackgroundTileLayerVisible +
+                    "; patchedLayers=" + patchedLayerCount
+            };
+        }
+
         public ScenePatchResult EnsurePortalNodeExists(string sceneFilePath, string nodePath, float x, float y, string portalPrefabResPath)
         {
             var scene = TscnParser.ParseFile(ValidateScenePatchInput(sceneFilePath, nodePath));
@@ -297,6 +329,25 @@ namespace MapEditorTool.Executor.ScenePatch
                 return name;
 
             return parent.Trim('/') + "/" + name;
+        }
+
+        private static void SyncBackgroundTileLayerVisibility(MapDefinition map)
+        {
+            foreach (var layer in map.TileLayers ?? Enumerable.Empty<TileLayer>())
+            {
+                if (IsBackgroundTileLayerName(layer.Name))
+                    layer.Visible = map.BackgroundTileLayerVisible;
+            }
+        }
+
+        private static bool IsBackgroundTileLayerName(string name)
+        {
+            name = (name ?? string.Empty).Trim();
+            if (name.Length == 0)
+                return false;
+            if (string.Equals(name, "Foreground", StringComparison.OrdinalIgnoreCase))
+                return false;
+            return name.IndexOf("back", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string FindExistingPortalPrefabResPath(TscnScene scene)

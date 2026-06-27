@@ -3,6 +3,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Windows.Forms;
 using MapEditorTool.Executor;
+using MapEditorTool.Executor.CollisionLayout;
+using MapEditorTool.Executor.ForegroundTextureCollision;
+using MapEditorTool.Executor.GameSettings;
+using MapEditorTool.Executor.MapApply;
+using MapEditorTool.Executor.MapCreation;
+using MapEditorTool.Executor.MapDeletion;
 using MapEditorTool.Executor.MapImport;
 using MapEditorTool.Executor.MapReport;
 using MapEditorTool.Executor.ProjectFile;
@@ -14,6 +20,12 @@ namespace MapEditorTool.UI
     public partial class Form1 : Form
     {
         private readonly DeveloperCommentExecutor _developerCommentExecutor;
+        private readonly CollisionLayoutExecutor _collisionLayoutExecutor;
+        private readonly ForegroundTextureCollisionExecutor _foregroundTextureCollisionExecutor;
+        private readonly GameSettingsExecutor _gameSettingsExecutor;
+        private readonly MapApplyExecutor _mapApplyExecutor;
+        private readonly MapCreationExecutor _mapCreationExecutor;
+        private readonly MapDeletionExecutor _mapDeletionExecutor;
         private readonly MapImportExecutor _mapImportExecutor;
         private readonly MapReportExecutor _mapReportExecutor;
         private readonly ProjectFileExecutor _projectFileExecutor;
@@ -28,6 +40,12 @@ namespace MapEditorTool.UI
             _viewModel = MapEditorShellViewModel.CreateShellDefaults();
 
             _developerCommentExecutor = new DeveloperCommentExecutor(AppDomain.CurrentDomain.BaseDirectory);
+            _collisionLayoutExecutor = new CollisionLayoutExecutor();
+            _foregroundTextureCollisionExecutor = new ForegroundTextureCollisionExecutor(_collisionLayoutExecutor);
+            _gameSettingsExecutor = new GameSettingsExecutor();
+            _mapApplyExecutor = new MapApplyExecutor();
+            _mapCreationExecutor = new MapCreationExecutor();
+            _mapDeletionExecutor = new MapDeletionExecutor();
             _mapImportExecutor = new MapImportExecutor();
             _mapReportExecutor = new MapReportExecutor(_mapImportExecutor);
             _projectFileExecutor = new ProjectFileExecutor();
@@ -72,6 +90,7 @@ namespace MapEditorTool.UI
                 CreateMenuItem("Open Project...", "menu.file.openProject", Keys.Control | Keys.O),
                 CreateMenuItem("Save Project", "menu.file.saveProject", Keys.Control | Keys.S),
                 CreateMenuItem("Save Project As...", "menu.file.saveProjectAs", Keys.Control | Keys.Shift | Keys.S),
+                CreateMenuItem("Apply Selected Map to Godot", "menu.file.applySelectedMapToGodot"),
                 new ToolStripSeparator(),
                 CreateMenuItem("从 Godot 重新加载...", "menu.file.importFromGodot"),
                 new ToolStripSeparator(),
@@ -182,6 +201,7 @@ namespace MapEditorTool.UI
             });
 
             mapsList.ContextMenuStrip = mapListContextMenu;
+            mapsList.SelectedIndexChanged += MapsListSelectedIndexChanged;
         }
 
         private void BuildTabs()
@@ -206,6 +226,7 @@ namespace MapEditorTool.UI
             SetToolStripItemText(mainMenu, "menu.file.openProject", "Open Project...");
             SetToolStripItemText(mainMenu, "menu.file.saveProject", "Save Project");
             SetToolStripItemText(mainMenu, "menu.file.saveProjectAs", "Save Project As...");
+            SetToolStripItemText(mainMenu, "menu.file.applySelectedMapToGodot", "Apply Selected Map to Godot");
             SetToolStripItemText(mainMenu, "menu.file.importFromGodot", "Reload From Godot...");
             SetToolStripItemText(mainMenu, "menu.file.exit", "Exit");
             SetToolStripItemText(mainMenu, "menu.edit", "Edit");
@@ -399,6 +420,10 @@ namespace MapEditorTool.UI
             {
                 ImportFromGodot(sourceDescription);
             }
+            else if (string.Equals(item.Name, "menu.file.applySelectedMapToGodot", StringComparison.Ordinal))
+            {
+                ApplySelectedMapToGodot();
+            }
             else if (string.Equals(item.Name, "menu.file.newProject", StringComparison.Ordinal))
             {
                 NewProject();
@@ -423,6 +448,10 @@ namespace MapEditorTool.UI
             {
                 _viewModel.SetStatusText("Status cleared.");
             }
+            else if (string.Equals(item.Name, "menu.developer.openLog", StringComparison.Ordinal))
+            {
+                OpenDeveloperCommentLog();
+            }
             else if (string.Equals(item.Name, "menu.developer.mapStatus", StringComparison.Ordinal))
             {
                 ShowMapStatusReport();
@@ -439,6 +468,30 @@ namespace MapEditorTool.UI
             {
                 ShowRuntimeVerificationReport();
             }
+            else if (string.Equals(item.Name, "context.maps.add", StringComparison.Ordinal))
+            {
+                AddMap();
+            }
+            else if (string.Equals(item.Name, "context.maps.delete", StringComparison.Ordinal))
+            {
+                DeleteSelectedMap();
+            }
+            else if (string.Equals(item.Name, "context.maps.pin", StringComparison.Ordinal))
+            {
+                PinSelectedMapAsStartingMap();
+            }
+            else if (string.Equals(item.Name, "tool.collisionInitialize", StringComparison.Ordinal))
+            {
+                InitializeSelectedMapCollision();
+            }
+            else if (string.Equals(item.Name, "tool.collisionLoad", StringComparison.Ordinal))
+            {
+                LoadSelectedMapCollision();
+            }
+            else if (string.Equals(item.Name, "tool.collisionSave", StringComparison.Ordinal))
+            {
+                SaveSelectedMapCollision();
+            }
         }
 
         private void ImportFromGodot(string sourceDescription)
@@ -454,6 +507,275 @@ namespace MapEditorTool.UI
                 _viewModel.SetStatusText("Import failed: " + ex.Message);
                 MessageBox.Show(this, ex.Message, "Import from Godot failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void OpenDeveloperCommentLog()
+        {
+            try
+            {
+                var path = _developerCommentExecutor.OpenCommentLog();
+                _viewModel.SetStatusText("Developer comment log opened: " + path);
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Open comment log failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Open comment log failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void ApplySelectedMapToGodot()
+        {
+            try
+            {
+                var selected = _viewModel.SelectedMap;
+                if (selected == null)
+                {
+                    _viewModel.SetStatusText("Apply skipped: no map is selected.");
+                    MessageBox.Show(this, "Import or open a project, then select a map first.", "Apply Selected Map", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var result = _mapApplyExecutor.ApplyMapToGodot(godotRoot, selected);
+                _viewModel.SetStatusText("Applied selected map to Godot: " + result.Summary);
+                ShowReportDialog("Apply Selected Map to Godot", string.Join(Environment.NewLine, result.Steps.ToArray()));
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Apply selected map failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Apply selected map failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void AddMap()
+        {
+            try
+            {
+                var displayName = PromptText(this, "Add Map", "Map display name:", "NewMap");
+                if (string.IsNullOrWhiteSpace(displayName))
+                    return;
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var result = _mapCreationExecutor.CreateMap(godotRoot, displayName, _viewModel.CurrentProject.Maps);
+                _viewModel.AddMap(result.CreatedMap);
+                _viewModel.SetStatusText("Added map: " + result.Summary);
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Add map failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Add map failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void DeleteSelectedMap()
+        {
+            try
+            {
+                var selected = _viewModel.SelectedMap;
+                if (selected == null)
+                {
+                    _viewModel.SetStatusText("Delete skipped: no map is selected.");
+                    MessageBox.Show(this, "Select a map first.", "Delete Map", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var confirm = MessageBox.Show(
+                    this,
+                    "Delete selected map resources and remove it from the project?\r\n\r\n" + selected.DisplayName + "\r\n" + selected.ScenePath,
+                    "Delete Map",
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Warning);
+                if (confirm != DialogResult.OK)
+                    return;
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                if (_gameSettingsExecutor.IsStartingMap(godotRoot, selected.ScenePath))
+                    _gameSettingsExecutor.WriteStartingMap(godotRoot, string.Empty);
+
+                var result = _mapDeletionExecutor.DeleteMapResources(godotRoot, selected, true);
+                _viewModel.RemoveSelectedMap();
+                _viewModel.SetStatusText("Deleted map: " + result.Summary);
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Delete map failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Delete map failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void PinSelectedMapAsStartingMap()
+        {
+            try
+            {
+                var selected = _viewModel.SelectedMap;
+                if (selected == null)
+                {
+                    _viewModel.SetStatusText("Pin skipped: no map is selected.");
+                    MessageBox.Show(this, "Select a map first.", "Pin Map", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                if (string.IsNullOrWhiteSpace(selected.ScenePath))
+                {
+                    _viewModel.SetStatusText("Pin skipped: selected map has no scene path.");
+                    MessageBox.Show(this, "The selected map has no scene path.", "Pin Map", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var result = _gameSettingsExecutor.WriteStartingMap(godotRoot, selected.ScenePath);
+                _viewModel.SetStatusText("Pinned starting map: " + result.Summary);
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Pin map failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Pin map failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void InitializeSelectedMapCollision()
+        {
+            try
+            {
+                var selected = RequireSelectedMap("Initialize collision");
+                if (selected == null)
+                    return;
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var target = GetSelectedCollisionLayoutTarget();
+                if (target == CollisionLayoutTarget.ForegroundTexture)
+                {
+                    var foreground = _foregroundTextureCollisionExecutor.BuildAndWriteLayout(godotRoot, selected);
+                    _viewModel.SetStatusText("Initialized foreground texture collision: " + foreground.Summary);
+                }
+                else
+                {
+                    var layout = MapEditorTool.Executor.MapCreation.CollisionLayoutData.Create(selected.RoomWidth, selected.RoomHeight);
+                    var saved = _collisionLayoutExecutor.SaveLayout(godotRoot, selected, target, layout);
+                    _viewModel.SetStatusText("Initialized tile collision: " + saved.Summary);
+                }
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Initialize collision failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Initialize collision failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void LoadSelectedMapCollision()
+        {
+            try
+            {
+                var selected = RequireSelectedMap("Load collision");
+                if (selected == null)
+                    return;
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var target = GetSelectedCollisionLayoutTarget();
+                var loaded = _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, false);
+                _viewModel.SetStatusText("Loaded collision layout: " + loaded.Summary);
+                ShowReportDialog(
+                    "Load Collision Layout",
+                    "Target: " + target + Environment.NewLine +
+                    "Path: " + loaded.CollisionResPath + Environment.NewLine +
+                    "File: " + loaded.CollisionFilePath + Environment.NewLine +
+                    "Room: " + loaded.Layout.RoomWidth + " x " + loaded.Layout.RoomHeight + Environment.NewLine +
+                    "Solid cells: " + CountSolidCells(loaded.Layout.Solid) + Environment.NewLine +
+                    "Polygons: " + (loaded.Layout.Polygons == null ? 0 : loaded.Layout.Polygons.Count) + Environment.NewLine +
+                    loaded.Summary);
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Load collision failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Load collision failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void SaveSelectedMapCollision()
+        {
+            try
+            {
+                var selected = RequireSelectedMap("Save collision");
+                if (selected == null)
+                    return;
+
+                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+                var target = GetSelectedCollisionLayoutTarget();
+                var loaded = _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, true);
+                var saved = _collisionLayoutExecutor.SaveLayout(godotRoot, selected, target, loaded.Layout);
+                _viewModel.SetStatusText("Saved collision layout: " + saved.Summary);
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Save collision failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Save collision failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private MapEditorTool.Models.MapDefinition RequireSelectedMap(string actionName)
+        {
+            var selected = _viewModel.SelectedMap;
+            if (selected != null)
+                return selected;
+
+            _viewModel.SetStatusText(actionName + " skipped: no map is selected.");
+            MessageBox.Show(this, "Select a map first.", actionName, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return null;
+        }
+
+        private CollisionLayoutTarget GetSelectedCollisionLayoutTarget()
+        {
+            var combo = FindToolStripItem(mapTools.Items, "collisionTargetCombo") as ToolStripComboBox;
+            if (combo != null && combo.SelectedIndex == 1)
+                return CollisionLayoutTarget.ForegroundTexture;
+
+            return CollisionLayoutTarget.Tile;
+        }
+
+        private static int CountSolidCells(bool[] solid)
+        {
+            if (solid == null)
+                return 0;
+
+            var count = 0;
+            for (var i = 0; i < solid.Length; i++)
+            {
+                if (solid[i])
+                    count++;
+            }
+
+            return count;
         }
 
         private void NewProject()
@@ -634,6 +956,62 @@ namespace MapEditorTool.UI
             }
         }
 
+        private static string PromptText(IWin32Window owner, string title, string label, string defaultValue)
+        {
+            using (var form = new Form())
+            using (var labelControl = new Label())
+            using (var textBox = new TextBox())
+            using (var okButton = new Button())
+            using (var cancelButton = new Button())
+            {
+                form.Text = title;
+                form.StartPosition = FormStartPosition.CenterParent;
+                form.MinimizeBox = false;
+                form.MaximizeBox = false;
+                form.ShowIcon = false;
+                form.FormBorderStyle = FormBorderStyle.FixedDialog;
+                form.Width = 420;
+                form.Height = 160;
+
+                labelControl.Left = 12;
+                labelControl.Top = 12;
+                labelControl.Width = 380;
+                labelControl.Text = label;
+
+                textBox.Left = 12;
+                textBox.Top = 38;
+                textBox.Width = 380;
+                textBox.Text = defaultValue ?? string.Empty;
+
+                okButton.Text = "OK";
+                okButton.Left = 232;
+                okButton.Top = 74;
+                okButton.Width = 80;
+                okButton.DialogResult = DialogResult.OK;
+
+                cancelButton.Text = "Cancel";
+                cancelButton.Left = 312;
+                cancelButton.Top = 74;
+                cancelButton.Width = 80;
+                cancelButton.DialogResult = DialogResult.Cancel;
+
+                form.Controls.Add(labelControl);
+                form.Controls.Add(textBox);
+                form.Controls.Add(okButton);
+                form.Controls.Add(cancelButton);
+                form.AcceptButton = okButton;
+                form.CancelButton = cancelButton;
+
+                form.Shown += delegate
+                {
+                    textBox.SelectionStart = textBox.TextLength;
+                    textBox.Focus();
+                };
+
+                return form.ShowDialog(owner) == DialogResult.OK ? textBox.Text.Trim() : string.Empty;
+            }
+        }
+
         private static string GetGodotSearchStartDirectory()
         {
             var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
@@ -669,7 +1047,7 @@ namespace MapEditorTool.UI
                 if (developerCommentModeCheckBox.Checked != snapshot.DeveloperCommentModeEnabled)
                     developerCommentModeCheckBox.Checked = snapshot.DeveloperCommentModeEnabled;
 
-                ReplaceItems(mapsList, snapshot.MapNames);
+                ReplaceItems(mapsList, snapshot.MapNames, snapshot.SelectedMapIndex);
                 ReplaceItems(linksList, snapshot.LinkNames);
                 mapPropertyGrid.SelectedObject = snapshot.MapState;
                 linkPropertyGrid.SelectedObject = snapshot.LinkState;
@@ -683,7 +1061,11 @@ namespace MapEditorTool.UI
 
         private static void ReplaceItems(ListBox listBox, string[] items)
         {
-            var selectedIndex = listBox.SelectedIndex;
+            ReplaceItems(listBox, items, listBox.SelectedIndex);
+        }
+
+        private static void ReplaceItems(ListBox listBox, string[] items, int selectedIndex)
+        {
             listBox.BeginUpdate();
             try
             {
@@ -693,11 +1075,22 @@ namespace MapEditorTool.UI
 
                 if (selectedIndex >= 0 && selectedIndex < listBox.Items.Count)
                     listBox.SelectedIndex = selectedIndex;
+                else if (listBox.Items.Count == 0)
+                    listBox.SelectedIndex = -1;
             }
             finally
             {
                 listBox.EndUpdate();
             }
+        }
+
+        private void MapsListSelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (_isApplyingSnapshot)
+                return;
+
+            _viewModel.SelectMapByIndex(mapsList.SelectedIndex);
+            ApplySnapshotToUi();
         }
 
         private string DescribeSource(object sender)

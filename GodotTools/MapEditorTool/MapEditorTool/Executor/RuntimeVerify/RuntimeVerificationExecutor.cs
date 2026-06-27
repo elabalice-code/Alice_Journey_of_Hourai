@@ -204,6 +204,47 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("tile_map_data")
                     && text.Contains("DecodeTileMapData"),
                 "MapEditorTool importer reads TileMapLayer tile_set and tile_map_data from map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-writes-background-tile-layer-visibility", "GodotTools/MapEditorTool/MapEditorTool/Executor/ScenePatch/ScenePatchExecutor.cs",
+                text => text.Contains("PatchBackgroundTileLayerVisibility")
+                    && text.Contains("TileMapLayer")
+                    && text.Contains("\"visible\"")
+                    && text.Contains("IsBackgroundTileLayerName"),
+                "MapEditorTool writes background TileMapLayer visibility for imported map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-builds-foreground-texture-collision", "GodotTools/MapEditorTool/MapEditorTool/Executor/ForegroundTextureCollision/ForegroundTextureCollisionExecutor.cs",
+                text => text.Contains("BuildAndWriteLayout")
+                    && text.Contains("ValidateForegroundTextureHasAlpha")
+                    && text.Contains("CollisionLayoutTarget.ForegroundTexture"),
+                "MapEditorTool can generate foreground texture collision layouts from alpha textures.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-loads-saves-collision-layout-json", "GodotTools/MapEditorTool/MapEditorTool/Executor/CollisionLayout/CollisionLayoutExecutor.cs",
+                text => text.Contains("LoadLayout")
+                    && text.Contains("SaveLayout")
+                    && text.Contains("NormalizeLayout")
+                    && text.Contains("collision_tile.json")
+                    && text.Contains("collision_fgtex.json"),
+                "MapEditorTool can load, normalize, and save collision layout JSON files.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-applies-map-state-to-godot", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapApply/MapApplyExecutor.cs",
+                text => text.Contains("ApplyMapToGodot")
+                    && text.Contains("PatchMapRuntimeNodes")
+                    && text.Contains("PatchMapTextures")
+                    && text.Contains("PatchCollisionMetadata"),
+                "MapEditorTool can apply core MapDefinition state back into Godot scene resources.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-pins-starting-map", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("PinSelectedMapAsStartingMap")
+                    && text.Contains("GameSettingsExecutor")
+                    && text.Contains("WriteStartingMap"),
+                "MapEditorTool UI can pin the selected map as CoreEngine/Game.tscn starting_map.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-loads-saves-collision-layouts", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("InitializeSelectedMapCollision")
+                    && text.Contains("LoadSelectedMapCollision")
+                    && text.Contains("SaveSelectedMapCollision")
+                    && text.Contains("CollisionLayoutExecutor")
+                    && text.Contains("ForegroundTextureCollisionExecutor"),
+                "MapEditorTool UI can initialize, load, and save selected map collision layouts through executors.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-opens-developer-comment-log", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("OpenDeveloperCommentLog")
+                    && text.Contains("OpenCommentLog")
+                    && text.Contains("menu.developer.openLog"),
+                "MapEditorTool UI can open the developer comment log through an executor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-project-file-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ProjectFile/ProjectFileExecutor.cs",
                 text => text.Contains("LoadProject") && text.Contains("SaveProject"),
                 "MapEditorTool project file executor can load and save MapProject JSON.");
