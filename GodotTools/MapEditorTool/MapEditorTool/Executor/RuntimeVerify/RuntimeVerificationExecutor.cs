@@ -233,6 +233,23 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("tile_map_data")
                     && text.Contains("DecodeTileMapData"),
                 "MapEditorTool importer reads TileMapLayer tile_set and tile_map_data from map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-cli-executor-entrypoints", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
+                text => text.Contains("RunStatus")
+                    && text.Contains("RunPortalReview")
+                    && text.Contains("RunRuntimeVerify")
+                    && text.Contains("RunImport")
+                    && text.Contains("RunValidate")
+                    && text.Contains("RunPatchPosition")
+                    && text.Contains("MapReportExecutor")
+                    && text.Contains("ProjectFileExecutor")
+                    && text.Contains("ScenePatchExecutor"),
+                "MapEditorTool restores non-interactive CLI entrypoints while routing business work through executors.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-program-dispatches-cli", "GodotTools/MapEditorTool/MapEditorTool/Program.cs",
+                text => text.Contains("static void Main(string[] args)")
+                    && text.Contains("NativeConsole.EnsureConsole")
+                    && text.Contains("CliEntry.Run(args)")
+                    && text.Contains("Application.Run(new Form1())"),
+                "MapEditorTool program entry dispatches command-line invocations to CLI and otherwise launches the WinForms UI.");
             AddTextCheck(checks, godotRoot, "mapeditortool-writes-texture-transform-metadata", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapTexture/MapTextureExecutor.cs",
                 text => text.Contains("PatchTextureMetadata")
                     && text.Contains("metadata/foreground_texture_anchor")

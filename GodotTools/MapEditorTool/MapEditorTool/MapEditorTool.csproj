@@ -48,6 +48,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Cli\CliEntry.cs" />
+    <Compile Include="Cli\NativeConsole.cs" />
     <Compile Include="Executor\CollisionLayout\CollisionLayoutExecutor.cs" />
     <Compile Include="Executor\CollisionLayout\CollisionLayoutModels.cs" />
     <Compile Include="Executor\DeveloperCommentExecutor.cs" />

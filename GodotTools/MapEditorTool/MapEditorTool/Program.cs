@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using System.Windows.Forms;
+using MapEditorTool.Cli;
 using MapEditorTool.UI;
 
 namespace MapEditorTool
@@ -13,8 +11,16 @@ namespace MapEditorTool
         /// Main application entry point.
         /// </summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
+            if (args != null && args.Length > 0)
+            {
+                NativeConsole.EnsureConsole();
+                var code = CliEntry.Run(args);
+                Environment.Exit(code);
+                return;
+            }
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             Application.Run(new Form1());
