@@ -22,6 +22,11 @@ namespace MapEditorTool.UI
         private CollisionLayoutData _collisionLayout;
         private CollisionLayoutTarget _collisionTarget;
         private bool _showCollisionOverlay;
+        private CollisionEditorMode _collisionEditorMode;
+        private CollisionEditorTool _collisionEditorTool;
+        private bool _collisionPainting;
+        private bool _collisionPaintValue;
+        private int _lastPaintedCollisionIndex;
         private Portal _dragPortal;
         private float _dragFromX;
         private float _dragFromY;
@@ -32,6 +37,7 @@ namespace MapEditorTool.UI
         public event EventHandler<PortalMoveCommittedEventArgs> PortalMoveCommitted;
         public event EventHandler<PortalAddRequestedEventArgs> PortalAddRequested;
         public event EventHandler<PortalContextRequestedEventArgs> PortalContextRequested;
+        public event EventHandler<CollisionLayoutEditedEventArgs> CollisionLayoutEdited;
 
         public MapPreviewCanvas()
         {
@@ -47,6 +53,13 @@ namespace MapEditorTool.UI
         {
             _map = map;
             _godotRoot = godotRoot ?? string.Empty;
+            Invalidate();
+        }
+
+        public void SetCollisionEditorState(CollisionEditorMode mode, CollisionEditorTool tool)
+        {
+            _collisionEditorMode = mode;
+            _collisionEditorTool = tool;
             Invalidate();
         }
 
@@ -104,6 +117,7 @@ namespace MapEditorTool.UI
             DrawGrid(graphics, bounds, _map.RoomWidth, _map.RoomHeight);
             DrawPortals(graphics, bounds);
             DrawSceneInfo(graphics, bounds);
+            DrawEditorInfo(graphics, bounds);
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
@@ -113,6 +127,18 @@ namespace MapEditorTool.UI
 
             if (_map == null)
                 return;
+
+            if (CanPaintCollisionLayout() && (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right))
+            {
+                _collisionPainting = true;
+                _collisionPaintValue = _collisionEditorTool == CollisionEditorTool.AddBox && e.Button == MouseButtons.Left;
+                if (_collisionEditorTool == CollisionEditorTool.Remove || e.Button == MouseButtons.Right)
+                    _collisionPaintValue = false;
+                _lastPaintedCollisionIndex = -1;
+                ApplyCollisionPaintAt(e.Location);
+                Capture = true;
+                return;
+            }
 
             if (e.Button == MouseButtons.Right)
             {
@@ -159,6 +185,12 @@ namespace MapEditorTool.UI
             if (_map == null)
                 return;
 
+            if (_collisionPainting && (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right))
+            {
+                ApplyCollisionPaintAt(e.Location);
+                return;
+            }
+
             if (_dragPortal != null && e.Button == MouseButtons.Left)
             {
                 var world = ScreenToWorld(e.Location);
@@ -188,6 +220,14 @@ namespace MapEditorTool.UI
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+
+            if (_collisionPainting)
+            {
+                _collisionPainting = false;
+                _lastPaintedCollisionIndex = -1;
+                Capture = false;
+                return;
+            }
 
             if (_dragPortal == null)
                 return;
@@ -235,6 +275,64 @@ namespace MapEditorTool.UI
                 (ClientSize.Height - height) / 2f,
                 width,
                 height);
+        }
+
+        private bool CanPaintCollisionLayout()
+        {
+            return _showCollisionOverlay &&
+                _collisionLayout != null &&
+                _collisionLayout.Solid != null &&
+                _collisionEditorMode == CollisionEditorMode.CollisionLayout &&
+                (_collisionEditorTool == CollisionEditorTool.AddBox || _collisionEditorTool == CollisionEditorTool.Remove);
+        }
+
+        private void ApplyCollisionPaintAt(Point location)
+        {
+            if (!CanPaintCollisionLayout())
+                return;
+
+            int x;
+            int y;
+            if (!TryGetCollisionCell(location, out x, out y))
+                return;
+
+            var roomWidth = Math.Max(1, _collisionLayout.RoomWidth);
+            var index = y * roomWidth + x;
+            if (index < 0 || index >= _collisionLayout.Solid.Length || index == _lastPaintedCollisionIndex)
+                return;
+
+            _lastPaintedCollisionIndex = index;
+            if (_collisionLayout.Solid[index] == _collisionPaintValue)
+                return;
+
+            _collisionLayout.Solid[index] = _collisionPaintValue;
+            Invalidate();
+
+            var handler = CollisionLayoutEdited;
+            if (handler != null)
+                handler(this, new CollisionLayoutEditedEventArgs(_collisionLayout, _collisionTarget, x, y, _collisionPaintValue));
+        }
+
+        private bool TryGetCollisionCell(Point location, out int x, out int y)
+        {
+            x = -1;
+            y = -1;
+            if (_collisionLayout == null || _map == null)
+                return false;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            if (!bounds.Contains(location))
+                return false;
+
+            var roomWidth = Math.Max(1, _collisionLayout.RoomWidth);
+            var roomHeight = Math.Max(1, _collisionLayout.RoomHeight);
+            x = (int)((location.X - bounds.X) / Math.Max(1f, bounds.Width) * roomWidth);
+            y = (int)((location.Y - bounds.Y) / Math.Max(1f, bounds.Height) * roomHeight);
+            x = ClampInt(x, 0, roomWidth - 1);
+            y = ClampInt(y, 0, roomHeight - 1);
+            return true;
         }
 
         private Portal HitTestPortal(Point point)
@@ -291,6 +389,15 @@ namespace MapEditorTool.UI
         }
 
         private static float Clamp(float value, float min, float max)
+        {
+            if (value < min)
+                return min;
+            if (value > max)
+                return max;
+            return value;
+        }
+
+        private static int ClampInt(int value, int min, int max)
         {
             if (value < min)
                 return min;
@@ -541,6 +648,28 @@ namespace MapEditorTool.UI
             }
         }
 
+        private void DrawEditorInfo(Graphics graphics, RectangleF bounds)
+        {
+            if (!_showCollisionOverlay)
+                return;
+
+            var text = "Collision: " + FormatCollisionEditorMode(_collisionEditorMode) +
+                " / " + FormatCollisionEditorTool(_collisionEditorTool);
+            var size = graphics.MeasureString(text, Font);
+            var rect = new RectangleF(
+                bounds.Right - size.Width - 16f,
+                Math.Max(6f, bounds.Top + 6f),
+                size.Width + 10f,
+                size.Height + 6f);
+
+            using (var brush = new SolidBrush(Color.FromArgb(210, 35, 40, 48)))
+            using (var textBrush = new SolidBrush(Color.White))
+            {
+                graphics.FillRectangle(brush, rect);
+                graphics.DrawString(text, Font, textBrush, rect.X + 5f, rect.Y + 3f);
+            }
+        }
+
         private void DrawCenteredText(Graphics graphics, string text)
         {
             using (var brush = new SolidBrush(Color.FromArgb(55, 65, 75)))
@@ -635,6 +764,75 @@ namespace MapEditorTool.UI
                     return new PointF(0, 0);
             }
         }
+
+        private static string FormatCollisionEditorMode(CollisionEditorMode mode)
+        {
+            switch (mode)
+            {
+                case CollisionEditorMode.TileSetCollision:
+                    return "TileSet";
+                case CollisionEditorMode.CollisionLayout:
+                default:
+                    return "Layout";
+            }
+        }
+
+        private static string FormatCollisionEditorTool(CollisionEditorTool tool)
+        {
+            switch (tool)
+            {
+                case CollisionEditorTool.Vertex:
+                    return "Vertex";
+                case CollisionEditorTool.Move:
+                    return "Move";
+                case CollisionEditorTool.Rotate:
+                    return "Rotate";
+                case CollisionEditorTool.Scale:
+                    return "Scale";
+                case CollisionEditorTool.AddBox:
+                    return "Add Box";
+                case CollisionEditorTool.Remove:
+                    return "Remove";
+                case CollisionEditorTool.Select:
+                default:
+                    return "Select";
+            }
+        }
+    }
+
+    internal enum CollisionEditorMode
+    {
+        TileSetCollision = 0,
+        CollisionLayout = 1
+    }
+
+    internal enum CollisionEditorTool
+    {
+        Select = 0,
+        Vertex = 1,
+        Move = 2,
+        Rotate = 3,
+        Scale = 4,
+        AddBox = 5,
+        Remove = 6
+    }
+
+    internal sealed class CollisionLayoutEditedEventArgs : EventArgs
+    {
+        public CollisionLayoutEditedEventArgs(CollisionLayoutData layout, CollisionLayoutTarget target, int cellX, int cellY, bool solid)
+        {
+            Layout = layout;
+            Target = target;
+            CellX = cellX;
+            CellY = cellY;
+            Solid = solid;
+        }
+
+        public CollisionLayoutData Layout { get; private set; }
+        public CollisionLayoutTarget Target { get; private set; }
+        public int CellX { get; private set; }
+        public int CellY { get; private set; }
+        public bool Solid { get; private set; }
     }
 
     internal sealed class PortalMoveCommittedEventArgs : EventArgs

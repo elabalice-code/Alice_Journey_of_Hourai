@@ -247,7 +247,17 @@ namespace MapEditorTool.UI
             mapTools.Items.Add(collisionMode);
             mapTools.Items.Add(new ToolStripSeparator());
             mapTools.Items.Add(new ToolStripLabel("Tool") { Name = "toolModeLabel" });
-            mapTools.Items.Add(CreateToolButton("Select(S)", "tool.select", true));
+            var selectTool = CreateToolButton("Select(S)", "tool.select", true);
+            _isApplyingSnapshot = true;
+            try
+            {
+                selectTool.Checked = true;
+            }
+            finally
+            {
+                _isApplyingSnapshot = false;
+            }
+            mapTools.Items.Add(selectTool);
             mapTools.Items.Add(CreateToolButton("Vertex(Q)", "tool.vertex", true));
             mapTools.Items.Add(CreateToolButton("Move(W)", "tool.move", true));
             mapTools.Items.Add(CreateToolButton("Rotate(E)", "tool.rotate", true));
@@ -285,6 +295,7 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.PortalMoveCommitted += MapPreviewCanvasPortalMoveCommitted;
             _mapPreviewCanvas.PortalAddRequested += MapPreviewCanvasPortalAddRequested;
             _mapPreviewCanvas.PortalContextRequested += MapPreviewCanvasPortalContextRequested;
+            _mapPreviewCanvas.CollisionLayoutEdited += MapPreviewCanvasCollisionLayoutEdited;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -429,6 +440,22 @@ namespace MapEditorTool.UI
             ClearCollisionOverlay();
             RefreshCollisionOverlayFromToolbar(false);
             ApplySnapshotToUi();
+        }
+
+        private void MapPreviewCanvasCollisionLayoutEdited(object sender, CollisionLayoutEditedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            _currentCollisionOverlay = e.Layout;
+            _currentCollisionOverlayTarget = e.Target;
+            _showCollisionOverlay = true;
+            _viewModel.MarkSelectedMapEdited("Collision layout");
+            _viewModel.SetStatusText(
+                "Collision cell " + (e.Solid ? "painted" : "cleared") +
+                ": " + e.CellX + ", " + e.CellY +
+                ". Use Save to write the collision file.");
+            statusText.Text = _viewModel.Snapshot.StatusText;
         }
 
         private void LinksPreviewCanvasMapSelected(object sender, LinkMapSelectedEventArgs e)
@@ -690,12 +717,15 @@ namespace MapEditorTool.UI
 
         private ToolStripButton CreateToolButton(string text, string name, bool checkOnClick)
         {
-            return new ToolStripButton(text)
+            var button = new ToolStripButton(text)
             {
                 Name = name,
                 CheckOnClick = checkOnClick,
                 ToolTipText = "Prototype shell tool: " + text
             };
+            if (checkOnClick)
+                button.CheckedChanged += MapToolSelectionChanged;
+            return button;
         }
 
         private void WireDeveloperInteractionHandlers(Control control)
@@ -1104,8 +1134,12 @@ namespace MapEditorTool.UI
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
                 var target = GetSelectedCollisionLayoutTarget();
-                var loaded = _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, true);
-                var saved = _collisionLayoutExecutor.SaveLayout(godotRoot, selected, target, loaded.Layout);
+                var layoutToSave = _showCollisionOverlay &&
+                    _currentCollisionOverlay != null &&
+                    _currentCollisionOverlayTarget == target
+                    ? _currentCollisionOverlay
+                    : _collisionLayoutExecutor.LoadLayout(godotRoot, selected, target, true).Layout;
+                var saved = _collisionLayoutExecutor.SaveLayout(godotRoot, selected, target, layoutToSave);
                 SetCollisionOverlay(saved.Layout, target, true);
                 _viewModel.SetStatusText("Saved collision layout: " + saved.Summary);
             }
@@ -1125,9 +1159,94 @@ namespace MapEditorTool.UI
             if (_isApplyingSnapshot)
                 return;
 
+            ApplyCollisionToolButtonSelection(sender as ToolStripItem);
             ApplyCollisionModeSelectionToMap();
             RefreshCollisionOverlayFromToolbar(false);
+            UpdateCollisionEditorState();
             ApplySnapshotToUi();
+        }
+
+        private void ApplyCollisionToolButtonSelection(ToolStripItem selectedItem)
+        {
+            if (selectedItem == null || !IsCollisionToolButton(selectedItem.Name))
+                return;
+
+            _isApplyingSnapshot = true;
+            try
+            {
+                foreach (var name in GetCollisionToolButtonNames())
+                {
+                    var button = FindToolStripItem(mapTools.Items, name) as ToolStripButton;
+                    if (button != null)
+                        button.Checked = string.Equals(button.Name, selectedItem.Name, StringComparison.Ordinal);
+                }
+            }
+            finally
+            {
+                _isApplyingSnapshot = false;
+            }
+        }
+
+        private void UpdateCollisionEditorState()
+        {
+            _mapPreviewCanvas.SetCollisionEditorState(GetSelectedCollisionEditorMode(), GetSelectedCollisionEditorTool());
+        }
+
+        private CollisionEditorMode GetSelectedCollisionEditorMode()
+        {
+            var combo = FindToolStripItem(mapTools.Items, "collisionEditModeCombo") as ToolStripComboBox;
+            return combo != null && combo.SelectedIndex == 0
+                ? CollisionEditorMode.TileSetCollision
+                : CollisionEditorMode.CollisionLayout;
+        }
+
+        private CollisionEditorTool GetSelectedCollisionEditorTool()
+        {
+            if (IsToolButtonChecked("tool.vertex"))
+                return CollisionEditorTool.Vertex;
+            if (IsToolButtonChecked("tool.move"))
+                return CollisionEditorTool.Move;
+            if (IsToolButtonChecked("tool.rotate"))
+                return CollisionEditorTool.Rotate;
+            if (IsToolButtonChecked("tool.scale"))
+                return CollisionEditorTool.Scale;
+            if (IsToolButtonChecked("tool.addSquareCollision"))
+                return CollisionEditorTool.AddBox;
+            if (IsToolButtonChecked("tool.removeCollision"))
+                return CollisionEditorTool.Remove;
+
+            return CollisionEditorTool.Select;
+        }
+
+        private bool IsToolButtonChecked(string name)
+        {
+            var button = FindToolStripItem(mapTools.Items, name) as ToolStripButton;
+            return button != null && button.Checked;
+        }
+
+        private static bool IsCollisionToolButton(string name)
+        {
+            foreach (var item in GetCollisionToolButtonNames())
+            {
+                if (string.Equals(item, name, StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static string[] GetCollisionToolButtonNames()
+        {
+            return new[]
+            {
+                "tool.select",
+                "tool.vertex",
+                "tool.move",
+                "tool.rotate",
+                "tool.scale",
+                "tool.addSquareCollision",
+                "tool.removeCollision"
+            };
         }
 
         private void ApplyCollisionModeSelectionToMap()
@@ -1626,6 +1745,7 @@ namespace MapEditorTool.UI
                 linkPropertyGrid.SelectedObject = snapshot.LinkState;
                 _mapPreviewCanvas.SetData(_viewModel.SelectedMap, TryResolveGodotRootForPreview());
                 _mapPreviewCanvas.SetCollisionOverlay(_currentCollisionOverlay, _currentCollisionOverlayTarget, _showCollisionOverlay);
+                _mapPreviewCanvas.SetCollisionEditorState(GetSelectedCollisionEditorMode(), GetSelectedCollisionEditorTool());
                 _linksPreviewCanvas.SetData(_viewModel.CurrentProject, _viewModel.SelectedMap, _viewModel.SelectedLink);
                 statusText.Text = snapshot.StatusText;
             }

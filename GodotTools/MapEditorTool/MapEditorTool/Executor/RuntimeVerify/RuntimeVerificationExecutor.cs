@@ -312,6 +312,34 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("viewModeCombo")
                     && text.Contains("collisionTargetCombo"),
                 "MapEditorTool toolbar can drive collision overlay loading and active collision mode selection.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-drives-collision-editor-state", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("UpdateCollisionEditorState")
+                    && text.Contains("GetSelectedCollisionEditorMode")
+                    && text.Contains("GetSelectedCollisionEditorTool")
+                    && text.Contains("ApplyCollisionToolButtonSelection")
+                    && text.Contains("SetCollisionEditorState"),
+                "MapEditorTool toolbar drives collision editor mode/tool state into the map preview canvas.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-collision-editor-state", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("CollisionEditorMode")
+                    && text.Contains("CollisionEditorTool")
+                    && text.Contains("SetCollisionEditorState")
+                    && text.Contains("DrawEditorInfo"),
+                "MapEditorTool map preview can display the active collision editor mode and tool state.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-layout-collision-paint", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("CollisionLayoutEdited")
+                    && text.Contains("ApplyCollisionPaintAt")
+                    && text.Contains("TryGetCollisionCell")
+                    && text.Contains("CollisionEditorTool.AddBox")
+                    && text.Contains("CollisionEditorTool.Remove"),
+                "MapEditorTool map preview can paint and erase solid cells in collision layout edit mode.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-layout-collision-paint", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasCollisionLayoutEdited")
+                    && text.Contains("CollisionLayoutEdited")
+                    && text.Contains("Use Save to write the collision file")
+                    && text.Contains("layoutToSave")
+                    && text.Contains("_currentCollisionOverlay")
+                    && text.Contains("Collision layout"),
+                "MapEditorTool UI consumes collision layout paint edits, marks the project dirty, and saves the current edited overlay through the Save collision action.");
             AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-canvas", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
                 text => text.Contains("LinksPreviewCanvas")
                     && text.Contains("DrawEdges")
