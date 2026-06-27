@@ -37,6 +37,10 @@ namespace MapEditorTool.Cli
                         return RunRuntimeVerify(opts);
                     case "ux-audit":
                         return RunUxAudit(opts);
+                    case "ux-walkthrough":
+                        return RunUxWalkthrough(opts);
+                    case "ux-review":
+                        return RunUxReview(opts);
                     case "import":
                         return RunImport(opts);
                     case "validate":
@@ -72,6 +76,8 @@ namespace MapEditorTool.Cli
             Console.WriteLine("  MapEditorTool.exe portal-review --godotRoot <dir> [--summary]");
             Console.WriteLine("  MapEditorTool.exe runtime-verify --godotRoot <dir> [--summary]");
             Console.WriteLine("  MapEditorTool.exe ux-audit --godotRoot <dir> [--summary]");
+            Console.WriteLine("  MapEditorTool.exe ux-walkthrough --godotRoot <dir> [--out <file>] [--summary]");
+            Console.WriteLine("  MapEditorTool.exe ux-review --godotRoot <dir> [--in <file>] [--out <file>] [--reviewer <name>] [--result pass|partial|fail|pending] [--step-results <id=pass;id=fail>] [--notes <text>] [--summary]");
             Console.WriteLine("  MapEditorTool.exe import --godotRoot <dir> --out <file> [--summary]");
             Console.WriteLine("  MapEditorTool.exe validate --godotRoot <dir> --in <file> [--summary]");
             Console.WriteLine("  MapEditorTool.exe patchpos --godotRoot <dir> --scene <res://...> --nodePath <path> --x <num> --y <num>");
@@ -151,6 +157,52 @@ namespace MapEditorTool.Cli
             var report = executor.BuildUxAudit(godotRoot);
             if (opts.ContainsKey("summary"))
                 Console.WriteLine(executor.FormatUxAuditSummary(report));
+            else
+                WriteJson(report);
+
+            return report.Ok ? 0 : 1;
+        }
+
+        private static int RunUxWalkthrough(Dictionary<string, string> opts)
+        {
+            var godotRoot = ResolveGodotRoot(opts, true);
+            var executor = new MapReportExecutor();
+            var report = executor.BuildUxWalkthrough(godotRoot);
+            var output = GetOption(opts, "out");
+            if (!string.IsNullOrWhiteSpace(output))
+            {
+                report.OutputPath = output;
+                report.OutputWritten = true;
+                WriteJsonFile(ResolveOutputPath(godotRoot, output), report);
+            }
+
+            if (opts.ContainsKey("summary"))
+                Console.WriteLine(executor.FormatUxWalkthroughSummary(report));
+            else
+                WriteJson(report);
+
+            return report.ProjectFileExists && report.StaticAuditOk ? 0 : 1;
+        }
+
+        private static int RunUxReview(Dictionary<string, string> opts)
+        {
+            var godotRoot = ResolveGodotRoot(opts, true);
+            var input = GetOption(opts, "in");
+            if (string.IsNullOrWhiteSpace(input))
+                input = Path.Combine("BuildLogs", "map_ux_review_result.json");
+
+            var executor = new MapReportExecutor();
+            var report = executor.BuildUxReview(godotRoot, input, opts);
+            var output = GetOption(opts, "out");
+            if (!string.IsNullOrWhiteSpace(output))
+            {
+                report.OutputPath = output;
+                report.OutputWritten = true;
+                WriteJsonFile(ResolveOutputPath(godotRoot, output), report);
+            }
+
+            if (opts.ContainsKey("summary"))
+                Console.WriteLine(executor.FormatUxReviewSummary(report));
             else
                 WriteJson(report);
 
@@ -403,6 +455,26 @@ namespace MapEditorTool.Cli
                 serializer.WriteObject(stream, value);
                 Console.WriteLine(Encoding.UTF8.GetString(stream.ToArray()));
             }
+        }
+
+        private static void WriteJsonFile<T>(string path, T value)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)) ?? ".");
+            var serializer = new DataContractJsonSerializer(typeof(T), new DataContractJsonSerializerSettings
+            {
+                UseSimpleDictionaryFormat = true
+            });
+
+            using (var stream = new MemoryStream())
+            {
+                serializer.WriteObject(stream, value);
+                File.WriteAllText(path, Encoding.UTF8.GetString(stream.ToArray()), Encoding.UTF8);
+            }
+        }
+
+        private static string ResolveOutputPath(string godotRoot, string output)
+        {
+            return Path.IsPathRooted(output) ? output : Path.Combine(godotRoot, output);
         }
 
         private static Dictionary<string, string> ParseOptions(string[] args)

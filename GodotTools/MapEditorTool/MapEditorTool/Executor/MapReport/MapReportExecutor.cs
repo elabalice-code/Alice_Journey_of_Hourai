@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization.Json;
+using System.Text;
 using MapEditorTool.Executor.MapImport;
 using MapEditorTool.Models;
 
@@ -221,9 +223,11 @@ namespace MapEditorTool.Executor.MapReport
             AddUxCheck(checks, "agent-mirror", "cli-summary-commands",
                 HasText(cliText, "status --godotRoot") &&
                     HasText(cliText, "runtime-verify") &&
+                    HasText(cliText, "ux-walkthrough") &&
+                    HasText(cliText, "ux-review") &&
                     HasText(cliText, "import --godotRoot") &&
                     HasText(cliText, "validate --godotRoot"),
-                "CLI mirrors key map status, verification, import, and validation workflows.", "Cli/CliEntry.cs");
+                "CLI mirrors key map status, verification, UX review, import, and validation workflows.", "Cli/CliEntry.cs");
             AddUxCheck(checks, "agent-mirror", "cli-utility-commands",
                 HasText(cliText, "tracealpha") &&
                     HasText(cliText, "portalanim"),
@@ -252,6 +256,132 @@ namespace MapEditorTool.Executor.MapReport
                 Checks = checks,
                 Recommendations = BuildUxRecommendations(checks)
             };
+        }
+
+        public MapUxWalkthroughReport BuildUxWalkthrough(string godotRoot)
+        {
+            godotRoot = Path.GetFullPath(godotRoot);
+            var status = BuildStatus(godotRoot);
+            var uxAudit = BuildUxAudit(godotRoot);
+            var validationInput = Path.Combine("BuildLogs", "map_project.json");
+            var sampleScene = status.SampleScenes.FirstOrDefault() ?? "res://CoreEngine/Maps/<reviewed-map>.tscn";
+            var steps = new List<MapUxWalkthroughStep>
+            {
+                BuildWalkthroughStep(1, "launch", "Launch MapEditorTool from ToolHub or the built executable.", "MapEditorTool window opens without errors and shows map/link editing surfaces.", ".\\tools.ps1 run map-editor launch -NoBuild"),
+                BuildWalkthroughStep(2, "import", "Use the import/reload action for the current Godot project.", "The UI reports the current project root and map count; no project resources are modified.", ".\\tools.ps1 map import --summary -NoBuild"),
+                BuildWalkthroughStep(3, "inspect", "Select a representative map and inspect its scene path, portals, links, and editable properties.", "The selected map is understandable to a non-technical user; suggested sample: " + sampleScene + ".", ".\\tools.ps1 map status --summary -NoBuild"),
+                BuildWalkthroughStep(4, "edit-preview", "Make a harmless in-memory edit or select an existing editable field without applying it to Godot resources.", "The UI makes dirty/selection state visible and the user can tell what would change before saving.", ".\\tools.ps1 map portal-review --summary -NoBuild"),
+                BuildWalkthroughStep(5, "save-review", "Save the MapEditorTool project JSON or use Save As to a review location.", "The UI gives success/failure feedback and the saved file can be validated against the current Godot scan.", ".\\tools.ps1 map validate --summary --in " + validationInput + " -NoBuild"),
+                BuildWalkthroughStep(6, "error-recovery", "Trigger or simulate an invalid path/action, then recover without changing game resources.", "The UI shows a clear warning/error, and Cancel/Undo/Open can return the user to a known-good state.", ".\\tools.ps1 map ux-audit --summary -NoBuild"),
+                BuildWalkthroughStep(7, "agent-mirror", "Run the agent mirror commands after the UI pass.", "CLI output matches the human observations and records the same map counts, validation state, and UX notes.", ".\\tools.ps1 handoff --summary -NoBuild")
+            };
+
+            return new MapUxWalkthroughReport
+            {
+                ProjectRoot = godotRoot,
+                ProjectFileExists = status.ProjectFileExists,
+                GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                WalkthroughKind = "human-live-ux",
+                Purpose = "Human click-through checklist for MapEditorTool import, inspect, edit preview, save/review, validation, and recovery flows. This report is a review script, not proof that the click-through has been completed.",
+                StaticAuditOk = uxAudit.Ok,
+                StaticAuditBlockingIssueCount = uxAudit.BlockingIssueCount,
+                StaticAuditWarningCount = uxAudit.WarningCount,
+                MapCount = status.MapCount,
+                PortalCount = status.PortalCount,
+                MapsWithoutPortalsCount = status.MapsWithoutPortalsCount,
+                SampleScenes = status.SampleScenes.Take(8).ToList(),
+                StepCount = steps.Count,
+                Steps = steps,
+                AcceptanceCriteria = new List<string>
+                {
+                    "A human can discover import/open/save/save-as without reading source code.",
+                    "The UI shows enough map, portal, link, and property context to understand the selected data.",
+                    "Save/apply actions give visible success or failure feedback.",
+                    "Validation can be run after the UI pass and reports no missing or extra scenes for the saved project JSON.",
+                    "Bad edits or invalid paths have a clear recovery path through cancel, undo, open, or restore-from-dump.",
+                    "Agent mirror commands can reproduce the key state without opening the UI."
+                },
+                RecommendedRecordPath = "BuildLogs/map_ux_walkthrough.json",
+                FollowUpCommands = new List<string>
+                {
+                    ".\\tools.ps1 map ux-walkthrough --summary --out BuildLogs\\map_ux_walkthrough.json -NoBuild",
+                    ".\\tools.ps1 map ux-audit --summary -NoBuild",
+                    ".\\tools.ps1 map import --summary -NoBuild",
+                    ".\\tools.ps1 map validate --summary -NoBuild",
+                    ".\\tools.ps1 handoff --summary -NoBuild"
+                }
+            };
+        }
+
+        public MapUxReviewResult BuildUxReview(string godotRoot, string input, IReadOnlyDictionary<string, string> options)
+        {
+            godotRoot = Path.GetFullPath(godotRoot);
+            input = string.IsNullOrWhiteSpace(input) ? Path.Combine("BuildLogs", "map_ux_review_result.json") : input;
+            options = options ?? new Dictionary<string, string>();
+
+            var absoluteInput = Path.IsPathRooted(input) ? input : Path.Combine(godotRoot, input);
+            var hasReviewInput = File.Exists(absoluteInput) && LooksLikeUxReviewResult(absoluteInput);
+            if (hasReviewInput && !HasNewUxReviewInput(options))
+            {
+                var existing = ReadJsonFile<MapUxReviewResult>(absoluteInput);
+                RecomputeUxReviewResult(existing);
+                existing.ProjectRoot = godotRoot;
+                existing.InputPath = input;
+                return existing;
+            }
+
+            var walkthrough = File.Exists(absoluteInput) && !hasReviewInput
+                ? ReadJsonFile<MapUxWalkthroughReport>(absoluteInput)
+                : BuildUxWalkthrough(godotRoot);
+
+            var stepResults = ParseStepResults(GetOption(options, "step-results"));
+            var defaultResult = NormalizeUxResult(GetOption(options, "result", "pending"));
+            var reviewer = GetOption(options, "reviewer");
+            var notes = GetOption(options, "notes");
+            var reviewedAt = GetOption(options, "reviewed-at", DateTimeOffset.UtcNow.ToString("O"));
+
+            var steps = walkthrough.Steps
+                .OrderBy(x => x.Order)
+                .Select(step =>
+                {
+                    string explicitResult;
+                    var result = stepResults.TryGetValue(step.Id, out explicitResult) ? explicitResult : defaultResult;
+                    return new MapUxReviewStepResult
+                    {
+                        Order = step.Order,
+                        Id = step.Id,
+                        ExpectedResult = step.ExpectedResult,
+                        Result = result,
+                        Passed = result.Equals("pass", StringComparison.OrdinalIgnoreCase),
+                        Notes = step.Notes,
+                        AgentMirrorCommand = step.AgentMirrorCommand
+                    };
+                })
+                .ToList();
+
+            var report = new MapUxReviewResult
+            {
+                ProjectRoot = godotRoot,
+                GeneratedAtUtc = DateTimeOffset.UtcNow.ToString("O"),
+                ReviewKind = "human-live-ux-result",
+                InputPath = input,
+                Reviewer = reviewer,
+                ReviewedAtUtc = reviewedAt,
+                OverallResult = defaultResult,
+                Notes = notes,
+                ProjectFileExists = walkthrough.ProjectFileExists,
+                StaticAuditOk = walkthrough.StaticAuditOk,
+                Steps = steps,
+                VerificationCommand = ".\\tools.ps1 map ux-review --summary --in BuildLogs\\map_ux_walkthrough.json --out BuildLogs\\map_ux_review_result.json --reviewer <name> --result pass --step-results \"launch=pass;import=pass;inspect=pass;edit-preview=pass;save-review=pass;error-recovery=pass;agent-mirror=pass\" -NoBuild"
+            };
+            RecomputeUxReviewResult(report);
+            if (!walkthrough.ProjectFileExists)
+                report.Issues.Add("Project file was missing when the walkthrough was generated.");
+            if (!walkthrough.StaticAuditOk)
+                report.Issues.Add("Static UX audit is not OK.");
+            report.IssueCount = report.Issues.Count;
+            report.Ok = report.Ok && report.IssueCount == 0;
+            return report;
         }
 
         public string FormatStatusSummary(MapEditorStatus status)
@@ -364,6 +494,84 @@ namespace MapEditorTool.Executor.MapReport
             return string.Join(Environment.NewLine, lines.ToArray());
         }
 
+        public string FormatUxWalkthroughSummary(MapUxWalkthroughReport report)
+        {
+            var lines = new List<string>
+            {
+                "MapEditorTool UX walkthrough",
+                "Project: " + report.ProjectRoot,
+                "Generated UTC: " + report.GeneratedAtUtc,
+                "Kind: " + report.WalkthroughKind,
+                "Project file: " + (report.ProjectFileExists ? "ok" : "missing"),
+                "Static audit: " + (report.StaticAuditOk ? "OK" : "FAILED") +
+                    " blocking=" + report.StaticAuditBlockingIssueCount +
+                    " warnings=" + report.StaticAuditWarningCount,
+                "Counts: maps=" + report.MapCount +
+                    " portals=" + report.PortalCount +
+                    " mapsWithoutPortals=" + report.MapsWithoutPortalsCount +
+                    " steps=" + report.StepCount,
+                "Record path: " + report.RecommendedRecordPath,
+                "Purpose: " + report.Purpose
+            };
+
+            AddSummaryList(lines, "Sample scenes", report.SampleScenes);
+            lines.Add("Steps:");
+            foreach (var step in report.Steps.OrderBy(x => x.Order))
+            {
+                lines.Add("  " + step.Order + ". " + step.Id + ": " + step.Action);
+                lines.Add("     expect: " + step.ExpectedResult);
+                lines.Add("     mirror: " + step.AgentMirrorCommand);
+            }
+
+            lines.Add("Acceptance criteria:");
+            foreach (var criterion in report.AcceptanceCriteria)
+                lines.Add("  " + criterion);
+
+            lines.Add("Follow-up commands:");
+            foreach (var command in report.FollowUpCommands)
+                lines.Add("  " + command);
+
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
+        public string FormatUxReviewSummary(MapUxReviewResult report)
+        {
+            var lines = new List<string>
+            {
+                "MapEditorTool UX review result",
+                "Project: " + report.ProjectRoot,
+                "Generated UTC: " + report.GeneratedAtUtc,
+                "Kind: " + report.ReviewKind,
+                "Input: " + report.InputPath,
+                "Output: " + report.OutputPath,
+                "Reviewer: " + (string.IsNullOrWhiteSpace(report.Reviewer) ? "missing" : report.Reviewer),
+                "Overall: " + (report.Ok ? "OK" : "NOT ACCEPTED") +
+                    " result=" + report.OverallResult +
+                    " complete=" + report.Complete.ToString().ToLowerInvariant() +
+                    " issues=" + report.IssueCount,
+                "Counts: steps=" + report.StepCount +
+                    " pass=" + report.PassedStepCount +
+                    " partial=" + report.PartialStepCount +
+                    " fail=" + report.FailedStepCount +
+                    " pending=" + report.PendingStepCount,
+                "Static audit: " + (report.StaticAuditOk ? "OK" : "FAILED") +
+                    " projectFile=" + (report.ProjectFileExists ? "ok" : "missing")
+            };
+
+            AddSummaryList(lines, "Issues", report.Issues);
+            lines.Add("Steps:");
+            foreach (var step in report.Steps.OrderBy(x => x.Order))
+            {
+                lines.Add("  " + step.Order + ". " + step.Id + ": " + step.Result);
+                lines.Add("     expect: " + step.ExpectedResult);
+                lines.Add("     mirror: " + step.AgentMirrorCommand);
+            }
+
+            lines.Add("Verification command:");
+            lines.Add("  " + report.VerificationCommand);
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
         private static MapValidationReport BuildValidationReport(
             string godotRoot,
             string inputPath,
@@ -418,6 +626,128 @@ namespace MapEditorTool.Executor.MapReport
                 Evidence = evidence,
                 Detail = detail
             });
+        }
+
+        private static MapUxWalkthroughStep BuildWalkthroughStep(int order, string id, string action, string expected, string agentMirrorCommand)
+        {
+            return new MapUxWalkthroughStep
+            {
+                Order = order,
+                Id = id,
+                Action = action,
+                ExpectedResult = expected,
+                AgentMirrorCommand = agentMirrorCommand,
+                HumanResult = "pending"
+            };
+        }
+
+        private static bool HasNewUxReviewInput(IReadOnlyDictionary<string, string> options)
+        {
+            return options.ContainsKey("reviewer") ||
+                options.ContainsKey("result") ||
+                options.ContainsKey("step-results") ||
+                options.ContainsKey("notes") ||
+                options.ContainsKey("reviewed-at");
+        }
+
+        private static bool LooksLikeUxReviewResult(string path)
+        {
+            var text = TryReadText(path);
+            return HasText(text, "\"ReviewKind\"") || HasText(text, "\"reviewKind\"");
+        }
+
+        private static void RecomputeUxReviewResult(MapUxReviewResult report)
+        {
+            if (report.Steps == null)
+                report.Steps = new List<MapUxReviewStepResult>();
+
+            foreach (var step in report.Steps)
+            {
+                step.Result = NormalizeUxResult(step.Result);
+                step.Passed = step.Result.Equals("pass", StringComparison.OrdinalIgnoreCase);
+            }
+
+            report.StepCount = report.Steps.Count;
+            report.PassedStepCount = report.Steps.Count(x => x.Result.Equals("pass", StringComparison.OrdinalIgnoreCase));
+            report.PartialStepCount = report.Steps.Count(x => x.Result.Equals("partial", StringComparison.OrdinalIgnoreCase));
+            report.FailedStepCount = report.Steps.Count(x => x.Result.Equals("fail", StringComparison.OrdinalIgnoreCase));
+            report.PendingStepCount = report.Steps.Count(x => x.Result.Equals("pending", StringComparison.OrdinalIgnoreCase));
+            report.OverallResult = NormalizeUxResult(report.OverallResult);
+            report.Complete = report.StepCount > 0 &&
+                report.PendingStepCount == 0 &&
+                !string.IsNullOrWhiteSpace(report.Reviewer) &&
+                !report.OverallResult.Equals("pending", StringComparison.OrdinalIgnoreCase);
+            report.Ok = report.Complete &&
+                report.FailedStepCount == 0 &&
+                report.PartialStepCount == 0 &&
+                report.Steps.All(x => x.Passed) &&
+                report.OverallResult.Equals("pass", StringComparison.OrdinalIgnoreCase);
+
+            var issues = new List<string>();
+            if (string.IsNullOrWhiteSpace(report.Reviewer))
+                issues.Add("Missing reviewer.");
+            if (report.OverallResult.Equals("pending", StringComparison.OrdinalIgnoreCase))
+                issues.Add("Overall result is pending.");
+            if (report.PendingStepCount > 0)
+                issues.Add(report.PendingStepCount + " UX walkthrough step(s) are still pending.");
+            if (report.PartialStepCount > 0)
+                issues.Add(report.PartialStepCount + " UX walkthrough step(s) are marked partial.");
+            if (report.FailedStepCount > 0)
+                issues.Add(report.FailedStepCount + " UX walkthrough step(s) are marked fail.");
+            report.Issues = issues;
+            report.IssueCount = issues.Count;
+        }
+
+        private static Dictionary<string, string> ParseStepResults(string raw)
+        {
+            var results = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(raw))
+                return results;
+
+            foreach (var part in raw.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var pieces = part.Split(new[] { '=' }, 2);
+                if (pieces.Length != 2 || string.IsNullOrWhiteSpace(pieces[0]))
+                    continue;
+                results[pieces[0].Trim()] = NormalizeUxResult(pieces[1]);
+            }
+
+            return results;
+        }
+
+        private static string NormalizeUxResult(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalized == "pass" || normalized == "partial" || normalized == "fail" || normalized == "pending")
+                return normalized;
+            return "pending";
+        }
+
+        private static string GetOption(IReadOnlyDictionary<string, string> options, string key)
+        {
+            return GetOption(options, key, string.Empty);
+        }
+
+        private static string GetOption(IReadOnlyDictionary<string, string> options, string key, string defaultValue)
+        {
+            string value;
+            return options != null && options.TryGetValue(key, out value) ? value : defaultValue;
+        }
+
+        private static T ReadJsonFile<T>(string path)
+        {
+            var serializer = new DataContractJsonSerializer(typeof(T), new DataContractJsonSerializerSettings
+            {
+                UseSimpleDictionaryFormat = true
+            });
+
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(File.ReadAllText(path))))
+            {
+                var value = serializer.ReadObject(stream);
+                if (value == null)
+                    throw new InvalidDataException("Failed to parse JSON file: " + path);
+                return (T)value;
+            }
         }
 
         private static int CountSuspiciousMojibake(string text)

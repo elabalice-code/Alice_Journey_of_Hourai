@@ -318,6 +318,8 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("RunPortalReview")
                     && text.Contains("RunRuntimeVerify")
                     && text.Contains("RunUxAudit")
+                    && text.Contains("RunUxWalkthrough")
+                    && text.Contains("RunUxReview")
                     && text.Contains("RunImport")
                     && text.Contains("RunValidate")
                     && text.Contains("RunPatchPosition")
@@ -391,6 +393,18 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("BuildUxAudit")
                     && text.Contains("FormatUxAuditSummary"),
                 "MapEditorTool restores the ux-audit CLI mirror through MapReportExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-cli-ux-walkthrough", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
+                text => text.Contains("case \"ux-walkthrough\"")
+                    && text.Contains("RunUxWalkthrough")
+                    && text.Contains("BuildUxWalkthrough")
+                    && text.Contains("FormatUxWalkthroughSummary"),
+                "MapEditorTool restores the ux-walkthrough CLI review script through MapReportExecutor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-cli-ux-review", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
+                text => text.Contains("case \"ux-review\"")
+                    && text.Contains("RunUxReview")
+                    && text.Contains("BuildUxReview")
+                    && text.Contains("FormatUxReviewSummary"),
+                "MapEditorTool restores the ux-review CLI result recorder through MapReportExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-loads-saves-collision-layout-json", "GodotTools/MapEditorTool/MapEditorTool/Executor/CollisionLayout/CollisionLayoutExecutor.cs",
                 text => text.Contains("LoadLayout")
                     && text.Contains("SaveLayout")

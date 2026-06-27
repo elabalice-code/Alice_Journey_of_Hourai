@@ -150,4 +150,125 @@ namespace MapEditorTool.Executor.MapReport
         public string Evidence { get; set; }
         public string Detail { get; set; }
     }
+
+    public sealed class MapUxWalkthroughReport
+    {
+        public MapUxWalkthroughReport()
+        {
+            ProjectRoot = string.Empty;
+            GeneratedAtUtc = string.Empty;
+            WalkthroughKind = string.Empty;
+            Purpose = string.Empty;
+            OutputPath = string.Empty;
+            RecommendedRecordPath = string.Empty;
+            SampleScenes = new List<string>();
+            Steps = new List<MapUxWalkthroughStep>();
+            AcceptanceCriteria = new List<string>();
+            FollowUpCommands = new List<string>();
+        }
+
+        public string ProjectRoot { get; set; }
+        public bool ProjectFileExists { get; set; }
+        public string GeneratedAtUtc { get; set; }
+        public string WalkthroughKind { get; set; }
+        public string Purpose { get; set; }
+        public bool StaticAuditOk { get; set; }
+        public int StaticAuditBlockingIssueCount { get; set; }
+        public int StaticAuditWarningCount { get; set; }
+        public int MapCount { get; set; }
+        public int PortalCount { get; set; }
+        public int MapsWithoutPortalsCount { get; set; }
+        public int StepCount { get; set; }
+        public string OutputPath { get; set; }
+        public bool OutputWritten { get; set; }
+        public string RecommendedRecordPath { get; set; }
+        public List<string> SampleScenes { get; set; }
+        public List<MapUxWalkthroughStep> Steps { get; set; }
+        public List<string> AcceptanceCriteria { get; set; }
+        public List<string> FollowUpCommands { get; set; }
+    }
+
+    public sealed class MapUxWalkthroughStep
+    {
+        public MapUxWalkthroughStep()
+        {
+            Id = string.Empty;
+            Action = string.Empty;
+            ExpectedResult = string.Empty;
+            AgentMirrorCommand = string.Empty;
+            HumanResult = string.Empty;
+            Notes = string.Empty;
+        }
+
+        public int Order { get; set; }
+        public string Id { get; set; }
+        public string Action { get; set; }
+        public string ExpectedResult { get; set; }
+        public string AgentMirrorCommand { get; set; }
+        public string HumanResult { get; set; }
+        public string Notes { get; set; }
+    }
+
+    public sealed class MapUxReviewResult
+    {
+        public MapUxReviewResult()
+        {
+            ProjectRoot = string.Empty;
+            GeneratedAtUtc = string.Empty;
+            ReviewKind = string.Empty;
+            InputPath = string.Empty;
+            OutputPath = string.Empty;
+            Reviewer = string.Empty;
+            ReviewedAtUtc = string.Empty;
+            OverallResult = string.Empty;
+            Notes = string.Empty;
+            Issues = new List<string>();
+            Steps = new List<MapUxReviewStepResult>();
+            VerificationCommand = string.Empty;
+        }
+
+        public string ProjectRoot { get; set; }
+        public string GeneratedAtUtc { get; set; }
+        public string ReviewKind { get; set; }
+        public string InputPath { get; set; }
+        public string OutputPath { get; set; }
+        public bool OutputWritten { get; set; }
+        public string Reviewer { get; set; }
+        public string ReviewedAtUtc { get; set; }
+        public string OverallResult { get; set; }
+        public string Notes { get; set; }
+        public bool ProjectFileExists { get; set; }
+        public bool StaticAuditOk { get; set; }
+        public int StepCount { get; set; }
+        public int PassedStepCount { get; set; }
+        public int PartialStepCount { get; set; }
+        public int FailedStepCount { get; set; }
+        public int PendingStepCount { get; set; }
+        public bool Complete { get; set; }
+        public bool Ok { get; set; }
+        public int IssueCount { get; set; }
+        public List<string> Issues { get; set; }
+        public List<MapUxReviewStepResult> Steps { get; set; }
+        public string VerificationCommand { get; set; }
+    }
+
+    public sealed class MapUxReviewStepResult
+    {
+        public MapUxReviewStepResult()
+        {
+            Id = string.Empty;
+            ExpectedResult = string.Empty;
+            Result = string.Empty;
+            Notes = string.Empty;
+            AgentMirrorCommand = string.Empty;
+        }
+
+        public int Order { get; set; }
+        public string Id { get; set; }
+        public string ExpectedResult { get; set; }
+        public string Result { get; set; }
+        public bool Passed { get; set; }
+        public string Notes { get; set; }
+        public string AgentMirrorCommand { get; set; }
+    }
 }
