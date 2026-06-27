@@ -238,6 +238,13 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PatchBackgroundTileLayerVisibility")
                     && text.Contains("PatchCollisionMetadata"),
                 "MapEditorTool writes map texture, background visibility, and collision metadata property edits back through executors.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-validates-foreground-texture-alpha", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("ValidateForegroundTexturePropertyChange")
+                    && text.Contains("ValidateForegroundTextureHasAlpha")
+                    && text.Contains("Foreground texture rejected")
+                    && text.Contains("Foreground texture disabled")
+                    && text.Contains("ForegroundTextureEnabled = false"),
+                "MapEditorTool rejects foreground textures without alpha before writing texture property edits.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-pins-starting-map", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("PinSelectedMapAsStartingMap")
                     && text.Contains("GameSettingsExecutor")

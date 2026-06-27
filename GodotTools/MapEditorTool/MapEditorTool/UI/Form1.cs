@@ -2920,6 +2920,9 @@ namespace MapEditorTool.UI
             if (map == null || string.IsNullOrWhiteSpace(propertyName))
                 return;
 
+            if (!ValidateForegroundTexturePropertyChange(map, propertyName, e))
+                return;
+
             var writeTextures = IsMapTextureProperty(propertyName);
             var writeTextureMetadata = IsMapTextureMetadataProperty(propertyName);
             var writeBackgroundLayerVisibility = string.Equals(propertyName, nameof(MapDefinition.BackgroundTileLayerVisible), StringComparison.Ordinal);
@@ -3343,6 +3346,60 @@ namespace MapEditorTool.UI
                         snapshot.HasLink);
                 }
             }
+        }
+
+        private bool ValidateForegroundTexturePropertyChange(MapDefinition map, string propertyName, PropertyValueChangedEventArgs e)
+        {
+            if (map == null || string.IsNullOrWhiteSpace(propertyName))
+                return true;
+
+            if (!string.Equals(propertyName, nameof(MapDefinition.ForegroundTexturePath), StringComparison.Ordinal) &&
+                !string.Equals(propertyName, nameof(MapDefinition.ForegroundTextureEnabled), StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            try
+            {
+                var godotRoot = ResolveGodotRootForEditor();
+                if (string.Equals(propertyName, nameof(MapDefinition.ForegroundTexturePath), StringComparison.Ordinal))
+                {
+                    var newPath = (map.ForegroundTexturePath ?? string.Empty).Trim();
+                    if (newPath.Length > 0 && !_foregroundTextureCollisionExecutor.ValidateForegroundTextureHasAlpha(godotRoot, newPath))
+                    {
+                        if (e != null && e.ChangedItem != null && e.ChangedItem.PropertyDescriptor != null)
+                            e.ChangedItem.PropertyDescriptor.SetValue(map, e.OldValue);
+                        map.ForegroundTextureEnabled = false;
+                        mapPropertyGrid.Refresh();
+                        _viewModel.SetStatusText("Foreground texture rejected: the image has no alpha channel.");
+                        MessageBox.Show(this, "Foreground texture must have an alpha channel.", "Foreground Texture", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return false;
+                    }
+                }
+
+                if (string.Equals(propertyName, nameof(MapDefinition.ForegroundTextureEnabled), StringComparison.Ordinal) && map.ForegroundTextureEnabled)
+                {
+                    var path = (map.ForegroundTexturePath ?? string.Empty).Trim();
+                    if (path.Length == 0 || !_foregroundTextureCollisionExecutor.ValidateForegroundTextureHasAlpha(godotRoot, path))
+                    {
+                        map.ForegroundTextureEnabled = false;
+                        mapPropertyGrid.Refresh();
+                        _viewModel.SetStatusText("Foreground texture disabled: choose an image with an alpha channel first.");
+                        MessageBox.Show(this, "Choose a foreground texture with an alpha channel before enabling it.", "Foreground Texture", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                map.ForegroundTextureEnabled = false;
+                mapPropertyGrid.Refresh();
+                _viewModel.SetStatusText("Foreground texture validation failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Foreground Texture", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return false;
+            }
+
+            return true;
         }
 
         private sealed class PortalTargetSnapshot
