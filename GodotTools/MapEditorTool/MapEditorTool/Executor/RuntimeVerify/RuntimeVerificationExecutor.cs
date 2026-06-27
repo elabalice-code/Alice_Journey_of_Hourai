@@ -283,8 +283,20 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("OpenFileDialog")
                     && text.Contains("FolderBrowserDialog")
                     && text.Contains("ResourcePathExecutor")
-                    && text.Contains("AutoResPathEditorTypeDescriptionProvider"),
+                    && text.Contains("AutoResPathEditorTypeDescriptionProvider")
+                    && text.Contains("internal static bool IsDirectoryProperty")
+                    && text.Contains("internal static string BuildFilter"),
                 "MapEditorTool UI attaches a resource path editor to PropertyGrid path fields while keeping import side effects in an executor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-property-grid-resource-browse-shortcuts", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("HookResourceBrowse(mapPropertyGrid)")
+                    && text.Contains("HookResourceBrowse(linkPropertyGrid)")
+                    && text.Contains("MouseDoubleClick")
+                    && text.Contains("Keys.Enter")
+                    && text.Contains("BrowseAndAssignResourcePath")
+                    && text.Contains("ChooseResourcePath")
+                    && text.Contains("ConvertToProjectResourcePath")
+                    && text.Contains("TryWriteBackMapPropertyChange"),
+                "MapEditorTool PropertyGrid supports double-click and Enter resource browsing while routing import/copy side effects through ResourcePathExecutor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-portal-editing-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/PortalEditing/PortalEditingExecutor.cs",
                 text => text.Contains("CreatePortal")
                     && text.Contains("float x, float y")

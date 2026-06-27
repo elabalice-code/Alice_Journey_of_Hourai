@@ -136,6 +136,8 @@ namespace MapEditorTool.UI
             mapPropertyGrid.SelectedGridItemChanged += PropertyGridSelectedGridItemChanged;
             linkPropertyGrid.PropertyValueChanged += LinkPropertyGridPropertyValueChanged;
             linkPropertyGrid.SelectedGridItemChanged += PropertyGridSelectedGridItemChanged;
+            HookResourceBrowse(mapPropertyGrid);
+            HookResourceBrowse(linkPropertyGrid);
         }
 
         private void RegisterPortalEditorProviders()
@@ -2975,6 +2977,137 @@ namespace MapEditorTool.UI
             _toolTip.Show(text, grid, point.X + 18, point.Y + 18, 5000);
             if (!string.IsNullOrWhiteSpace(value))
                 _toolTip.SetToolTip(grid, value);
+        }
+
+        private void HookResourceBrowse(PropertyGrid grid)
+        {
+            if (grid == null)
+                return;
+
+            grid.MouseDoubleClick += delegate(object sender, MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Left)
+                    BrowseAndAssignResourcePath(grid);
+            };
+
+            grid.KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.KeyCode != Keys.Enter)
+                    return;
+
+                if (BrowseAndAssignResourcePath(grid))
+                    e.Handled = true;
+            };
+        }
+
+        private bool BrowseAndAssignResourcePath(PropertyGrid grid)
+        {
+            var item = grid == null ? null : grid.SelectedGridItem;
+            var property = item == null ? null : item.PropertyDescriptor;
+            if (item == null || property == null || property.IsReadOnly || property.PropertyType != typeof(string))
+                return false;
+
+            var godotRoot = ResolveGodotRootForEditor();
+            if (string.IsNullOrWhiteSpace(godotRoot))
+                return false;
+
+            var propertyName = property.Name ?? string.Empty;
+            if (!ShouldBrowseResourcePath(propertyName))
+                return false;
+
+            var currentValue = item.Value as string ?? string.Empty;
+            var currentAbsolutePath = _resourcePathExecutor.TryResolveToExistingPath(godotRoot, currentValue);
+            var initialDirectory = _resourcePathExecutor.ResolveInitialDirectory(godotRoot, currentAbsolutePath);
+            if (string.IsNullOrWhiteSpace(currentAbsolutePath) && string.IsNullOrWhiteSpace(currentValue))
+            {
+                initialDirectory = _resourcePathExecutor.EnsurePreferredProjectResourceDirectory(
+                    godotRoot,
+                    initialDirectory,
+                    _viewModel.SelectedMap);
+            }
+
+            var chosenPath = ChooseResourcePath(propertyName, currentValue, currentAbsolutePath, initialDirectory);
+            if (string.IsNullOrWhiteSpace(chosenPath))
+                return false;
+
+            var result = _resourcePathExecutor.ConvertToProjectResourcePath(
+                godotRoot,
+                chosenPath,
+                initialDirectory,
+                _viewModel.SelectedMap);
+            if (string.IsNullOrWhiteSpace(result.ResultPath))
+                return false;
+
+            var component = item.Parent == null ? null : item.Parent.Value;
+            if (component == null || component is string)
+                component = grid.SelectedObject;
+            if (component == null)
+                return false;
+
+            property.SetValue(component, result.ResultPath);
+            grid.Refresh();
+
+            if (ReferenceEquals(grid, mapPropertyGrid))
+            {
+                _viewModel.MarkSelectedMapEdited(propertyName);
+                TryWriteBackMapPropertyChange(propertyName, null);
+            }
+            else if (ReferenceEquals(grid, linkPropertyGrid))
+            {
+                _viewModel.MarkSelectedLinkEdited(propertyName);
+            }
+
+            ApplySnapshotToUi();
+            return true;
+        }
+
+        private string ChooseResourcePath(string propertyName, string currentValue, string currentAbsolutePath, string initialDirectory)
+        {
+            if (GodotResPathEditor.IsDirectoryProperty(propertyName))
+            {
+                using (var dialog = new FolderBrowserDialog())
+                {
+                    dialog.Description = "Select a folder";
+                    dialog.ShowNewFolderButton = true;
+                    if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+                        dialog.SelectedPath = initialDirectory;
+
+                    return dialog.ShowDialog(this) == DialogResult.OK ? dialog.SelectedPath : string.Empty;
+                }
+            }
+
+            using (var dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Select a file";
+                dialog.Filter = GodotResPathEditor.BuildFilter(propertyName, currentValue);
+                if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+                    dialog.InitialDirectory = initialDirectory;
+                if (!string.IsNullOrWhiteSpace(currentAbsolutePath) && File.Exists(currentAbsolutePath))
+                    dialog.FileName = currentAbsolutePath;
+
+                return dialog.ShowDialog(this) == DialogResult.OK ? dialog.FileName : string.Empty;
+            }
+        }
+
+        private static bool ShouldBrowseResourcePath(string propertyName)
+        {
+            propertyName = propertyName ?? string.Empty;
+            if (propertyName.EndsWith("Path", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (propertyName.EndsWith("Dir", StringComparison.OrdinalIgnoreCase) ||
+                propertyName.EndsWith("Directory", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (propertyName.IndexOf("Texture", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (propertyName.IndexOf("TileSet", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (propertyName.IndexOf("Scene", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (propertyName.IndexOf("Video", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            if (propertyName.IndexOf("Collision", StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            return false;
         }
 
         private void MapPropertyGridPropertyValueChanged(object sender, PropertyValueChangedEventArgs e)

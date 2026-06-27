@@ -110,14 +110,14 @@ namespace MapEditorTool.UI
             return _resolveSelectedMap == null ? null : _resolveSelectedMap();
         }
 
-        private static bool IsDirectoryProperty(string propertyName)
+        internal static bool IsDirectoryProperty(string propertyName)
         {
             propertyName = propertyName ?? string.Empty;
             return propertyName.EndsWith("Dir", StringComparison.OrdinalIgnoreCase) ||
                 propertyName.EndsWith("Directory", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static string BuildFilter(string propertyName, string currentValue)
+        internal static string BuildFilter(string propertyName, string currentValue)
         {
             propertyName = propertyName ?? string.Empty;
             currentValue = currentValue ?? string.Empty;
