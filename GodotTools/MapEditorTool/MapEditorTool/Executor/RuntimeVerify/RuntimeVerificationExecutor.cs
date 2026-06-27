@@ -146,6 +146,12 @@ namespace MapEditorTool.Executor.RuntimeVerify
             AddTextCheck(checks, godotRoot, "room-flow-executor-calls-game-load-room", "CoreEngine/Scripts/Actor/RoomFlowIntentExecutor.gd",
                 text => text.Contains("game.load_room(target)"),
                 "RoomFlowIntentExecutor calls game.load_room(target).");
+            AddTextCheck(checks, godotRoot, "room-flow-executor-owns-map-window-reset", "CoreEngine/Scripts/Actor/RoomFlowIntentExecutor.gd",
+                text => text.Contains("KIND_RESET_MAP_STARTING_COORDS")
+                    && text.Contains("_reset_map_starting_coords")
+                    && text.Contains("UI/MapWindow")
+                    && text.Contains("reset_starting_coords"),
+                "RoomFlowIntentExecutor owns reset_map_starting_coords UI/MapWindow side effect.");
             AddTextCheck(checks, godotRoot, "metsys-load-room-exists", "addons/MetroidvaniaSystem/Template/Scripts/MetSysGame.gd",
                 text => text.Contains("func load_room(path"),
                 "MetSysGame exposes load_room(path).");
@@ -158,6 +164,13 @@ namespace MapEditorTool.Executor.RuntimeVerify
             AddTextCheck(checks, godotRoot, "area-catalog-starting-rooms", "CoreEngine/Scripts/World/AreaCatalog.gd",
                 text => ExtractResPaths(text).Any(x => x.StartsWith("res://CoreEngine/Maps/", StringComparison.Ordinal)),
                 "AreaCatalog.gd references area starting rooms.");
+            AddTextCheck(checks, godotRoot, "map-area-state-actor-applies-area-catalog", "CoreEngine/Scripts/Actor/MapAreaStateActor.gd",
+                text => text.Contains("AreaCatalog.get_initial_area_id")
+                    && text.Contains("AreaCatalog.get_area_def")
+                    && text.Contains("KEY_CURRENT_AREA_ID")
+                    && text.Contains("TYPE_INPUT_MODE_CHANGE_REQUEST")
+                    && text.Contains("MapInputModeNameScript.from_area_input_mode"),
+                "MapAreaStateActor owns applying AreaCatalog state into workplace and input mode requests.");
             AddTextCheck(checks, godotRoot, "portal-runtime-consumes-mapeditor-portal-fields", "CoreEngine/Scripts/World/Portal.gd",
                 text => text.Contains("@export_file(\"room_link\") var target_map")
                     && text.Contains("@export var target_area")
@@ -199,22 +212,89 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("camera.limit_left")
                     && text.Contains("camera.limit_bottom"),
                 "MapRuntimeSurface applies camera bounds from MapEditor collision/texture metadata.");
+            AddTextCheck(checks, godotRoot, "map-runtime-guard-resets-player-inside-bounds", "CoreEngine/Scripts/Actor/MapRuntimeGuard.gd",
+                text => text.Contains("map_world_bounds_rect")
+                    && text.Contains("reset_entry")
+                    && text.Contains("global_position")
+                    && text.Contains("IsTransferred"),
+                "MapRuntimeGuard owns player fall-out reset against MapEditor-derived map bounds.");
             AddTextCheck(checks, godotRoot, "game-delegates-map-runtime-surface", "CoreEngine/Scripts/Systems/Game.gd",
                 text => text.Contains("MapRuntimeSurfaceScript.apply_surface_metadata(map, player)")
                     && text.Contains("MapRuntimeSurfaceScript.update_background_texture_focus")
                     && text.Contains("MapRuntimeSurfaceScript.apply_camera_limits_from_metadata")
                     && text.Contains("MapRuntimeSurfaceScript.print_background_diagnostics"),
                 "Game.gd delegates MapEditor collision, texture, and camera runtime work to MapRuntimeSurface.");
+            AddTextCheck(checks, godotRoot, "game-delegates-map-runtime-guard", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("MapRuntimeGuardScript")
+                    && text.Contains("_map_runtime_guard.reset_entry(player)")
+                    && text.Contains("_map_runtime_guard.tick(delta, map, player, map_changing)")
+                    && text.Contains("MetSys.set_player_position(player.position)"),
+                "Game.gd delegates fall-out bounds guard to MapRuntimeGuard and keeps the MetSys sync boundary.");
             AddTextCheck(checks, godotRoot, "map-room-load-orchestrator-loads-map-scenes", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
                 text => text.Contains("load_room_with_progress")
                     && text.Contains("load_packed_scene_threaded")
-                    && text.Contains("game.map = new_map"),
-                "MapRoomLoadOrchestrator owns threaded map scene replacement.");
+                    && text.Contains("game.map = new_map")
+                    && text.Contains("MetSys.current_layer")
+                    && text.Contains("room_loaded.emit"),
+                "MapRoomLoadOrchestrator owns threaded map scene replacement and MetSys layer sync.");
+            AddTextCheck(checks, godotRoot, "map-room-load-orchestrator-handles-generated-and-loop-rooms", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
+                text => text.Contains("loop_path")
+                    && text.Contains("consume_loop_path")
+                    && text.Contains("instantiate_room")
+                    && text.Contains("GeneratedRoomFactoryScript.create"),
+                "MapRoomLoadOrchestrator owns loop redirects and generated-room instantiation.");
+            AddTextCheck(checks, godotRoot, "map-room-lifecycle-publishes-room-events", "CoreEngine/Scripts/Actor/MapRoomLifecycleActor.gd",
+                text => text.Contains("TYPE_ROOM_LOADED")
+                    && text.Contains("TYPE_LEVEL_EVENT_REQUEST")
+                    && text.Contains("enter_random_level")
+                    && text.Contains("exit_random_level")
+                    && text.Contains("MetSys.last_player_position")
+                    && text.Contains("MetSys.set_player_position"),
+                "MapRoomLifecycleActor owns room-loaded publication, random-level transitions, and initial MetSys player-position sync.");
+            AddTextCheck(checks, godotRoot, "map-spawn-actor-owns-room-spawn-nodes", "CoreEngine/Scripts/Actor/MapSpawnActor.gd",
+                text => text.Contains("teleport_player_to_save_point_if_any")
+                    && text.Contains("SavePoint")
+                    && text.Contains("ensure_alice")
+                    && text.Contains("AliceSpawn")
+                    && text.Contains("AliceNPCScene"),
+                "MapSpawnActor owns SavePoint and Alice/AliceSpawn room-node conventions.");
             AddTextCheck(checks, godotRoot, "generated-room-factory-handles-gen-rooms", "CoreEngine/Scripts/Actor/GeneratedRoomFactory.gd",
                 text => text.Contains("path.begins_with(\"GEN\")")
                     && text.Contains("CoreEngine/Maps/Junction.tscn")
                     && text.Contains("apply_config"),
                 "GeneratedRoomFactory owns runtime-only GEN room construction from Junction.tscn.");
+            AddTextCheck(checks, godotRoot, "room-load-orchestrator-delegates-generated-room-factory", "CoreEngine/Scripts/Actor/MapRoomLoadOrchestrator.gd",
+                text => text.Contains("GeneratedRoomFactoryScript.can_create(effective)")
+                    && text.Contains("GeneratedRoomFactoryScript.create(effective)"),
+                "MapRoomLoadOrchestrator delegates generated room creation to GeneratedRoomFactory.");
+            AddTextCheck(checks, godotRoot, "game-delegates-map-room-loading", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("MapRoomLoadOrchestratorScript")
+                    && text.Contains("_map_room_loader.load_room_with_progress")
+                    && text.Contains("_map_room_loader.instantiate_room")
+                    && text.Contains("super._load_room(effective)")
+                    && !text.Contains("func reset_map_starting_coords"),
+                "Game.gd delegates map room loading and generated/loop room instantiation to MapRoomLoadOrchestrator.");
+            AddTextCheck(checks, godotRoot, "game-delegates-map-spawn-nodes", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("MapSpawnActorScript")
+                    && text.Contains("MapSpawnActorScript.teleport_player_to_save_point_if_any")
+                    && text.Contains("MapSpawnActorScript.ensure_alice"),
+                "Game.gd delegates SavePoint and Alice room-node conventions to MapSpawnActor.");
+            AddTextCheck(checks, godotRoot, "game-delegates-map-area-state", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("MapAreaStateActorScript.apply_defaults")
+                    && text.Contains("MapAreaStateActorScript.apply_initial_area")
+                    && text.Contains("MapAreaStateActorScript.apply_area")
+                    && text.Contains("MapAreaStateActorScript.current_area_id")
+                    && !text.Contains("AreaCatalog")
+                    && !text.Contains("AreaDef"),
+                "Game.gd delegates area state/catalog application to MapAreaStateActor.");
+            AddTextCheck(checks, godotRoot, "game-delegates-map-room-lifecycle", "CoreEngine/Scripts/Systems/Game.gd",
+                text => text.Contains("MapRoomLifecycleActorScript")
+                    && text.Contains("_map_room_lifecycle.reset()")
+                    && text.Contains("_map_room_lifecycle.publish_room_entered")
+                    && !text.Contains("enter_random_level")
+                    && !text.Contains("exit_random_level")
+                    && !text.Contains("MetSys.last_player_position"),
+                "Game.gd delegates room lifecycle publication and random-level state to MapRoomLifecycleActor.");
         }
 
         private static void AddMapEditorToolChecks(List<MapRuntimeCheck> checks, string godotRoot)
