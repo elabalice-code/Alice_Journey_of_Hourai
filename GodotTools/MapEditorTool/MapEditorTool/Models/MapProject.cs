@@ -48,10 +48,43 @@ namespace MapEditorTool.Models
 
         public void RemoveMapById(string mapId)
         {
-            Maps.RemoveAll(m => string.Equals(m.Id, mapId, StringComparison.Ordinal));
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            mapId = (mapId ?? string.Empty).Trim();
+            if (mapId.Length > 0)
+                ids.Add(mapId);
+
+            foreach (var map in Maps)
+            {
+                if (string.Equals((map.Id ?? string.Empty).Trim(), mapId, StringComparison.Ordinal) ||
+                    string.Equals((map.ScenePath ?? string.Empty).Trim(), mapId, StringComparison.Ordinal))
+                {
+                    AddMapIdentity(ids, map);
+                }
+            }
+
+            Maps.RemoveAll(m =>
+                ids.Contains((m.Id ?? string.Empty).Trim()) ||
+                ids.Contains((m.ScenePath ?? string.Empty).Trim()));
             Links.RemoveAll(l =>
-                string.Equals(l.From.MapId, mapId, StringComparison.Ordinal) ||
-                string.Equals(l.To.MapId, mapId, StringComparison.Ordinal));
+                l == null ||
+                l.From == null ||
+                l.To == null ||
+                ids.Contains((l.From.MapId ?? string.Empty).Trim()) ||
+                ids.Contains((l.To.MapId ?? string.Empty).Trim()));
+        }
+
+        private static void AddMapIdentity(HashSet<string> ids, MapDefinition map)
+        {
+            if (map == null)
+                return;
+
+            var id = (map.Id ?? string.Empty).Trim();
+            if (id.Length > 0)
+                ids.Add(id);
+
+            var scenePath = (map.ScenePath ?? string.Empty).Trim();
+            if (scenePath.Length > 0)
+                ids.Add(scenePath);
         }
     }
 

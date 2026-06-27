@@ -22,6 +22,16 @@ namespace MapEditorTool.UI
         private CollisionLayoutData _collisionLayout;
         private CollisionLayoutTarget _collisionTarget;
         private bool _showCollisionOverlay;
+        private Portal _dragPortal;
+        private float _dragFromX;
+        private float _dragFromY;
+        private float _dragOffsetX;
+        private float _dragOffsetY;
+        private bool _dragMoved;
+
+        public event EventHandler<PortalMoveCommittedEventArgs> PortalMoveCommitted;
+        public event EventHandler<PortalAddRequestedEventArgs> PortalAddRequested;
+        public event EventHandler<PortalContextRequestedEventArgs> PortalContextRequested;
 
         public MapPreviewCanvas()
         {
@@ -96,6 +106,120 @@ namespace MapEditorTool.UI
             DrawSceneInfo(graphics, bounds);
         }
 
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            Focus();
+
+            if (_map == null)
+                return;
+
+            if (e.Button == MouseButtons.Right)
+            {
+                var hitPortal = HitTestPortal(e.Location);
+                if (hitPortal != null)
+                {
+                    var contextHandler = PortalContextRequested;
+                    if (contextHandler != null)
+                        contextHandler(this, new PortalContextRequestedEventArgs(hitPortal));
+                    return;
+                }
+
+                var screenWorld = ScreenToWorld(e.Location);
+                var addPosition = ClampToRoom(screenWorld.X, screenWorld.Y);
+                var args = new PortalAddRequestedEventArgs(addPosition.X, addPosition.Y);
+                var addHandler = PortalAddRequested;
+                if (addHandler != null)
+                    addHandler(this, args);
+                return;
+            }
+
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            var hit = HitTestPortal(e.Location);
+            if (hit == null)
+                return;
+
+            var world = ScreenToWorld(e.Location);
+            _dragPortal = hit;
+            _dragFromX = hit.X;
+            _dragFromY = hit.Y;
+            _dragOffsetX = hit.X - world.X;
+            _dragOffsetY = hit.Y - world.Y;
+            _dragMoved = false;
+            Capture = true;
+            Cursor = Cursors.SizeAll;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+
+            if (_map == null)
+                return;
+
+            if (_dragPortal != null && e.Button == MouseButtons.Left)
+            {
+                var world = ScreenToWorld(e.Location);
+                var clamped = ClampToRoom(world.X + _dragOffsetX, world.Y + _dragOffsetY);
+                if (Math.Abs(_dragPortal.X - clamped.X) > 0.01f || Math.Abs(_dragPortal.Y - clamped.Y) > 0.01f)
+                {
+                    _dragPortal.X = clamped.X;
+                    _dragPortal.Y = clamped.Y;
+                    _dragMoved = true;
+                    Invalidate();
+                }
+
+                return;
+            }
+
+            if (e.Button == MouseButtons.None)
+                Cursor = HitTestPortal(e.Location) == null ? Cursors.Default : Cursors.Hand;
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            if (_dragPortal == null)
+                Cursor = Cursors.Default;
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+
+            if (_dragPortal == null)
+                return;
+
+            var portal = _dragPortal;
+            var fromX = _dragFromX;
+            var fromY = _dragFromY;
+            var toX = portal.X;
+            var toY = portal.Y;
+            var moved = _dragMoved;
+
+            _dragPortal = null;
+            _dragMoved = false;
+            Capture = false;
+            Cursor = HitTestPortal(e.Location) == null ? Cursors.Default : Cursors.Hand;
+
+            if (!moved)
+                return;
+
+            var args = new PortalMoveCommittedEventArgs(portal, fromX, fromY, toX, toY);
+            var handler = PortalMoveCommitted;
+            if (handler != null)
+                handler(this, args);
+
+            if (!args.Accepted)
+            {
+                portal.X = fromX;
+                portal.Y = fromY;
+                Invalidate();
+            }
+        }
+
         private RectangleF ComputeRoomBounds(int roomPixelWidth, int roomPixelHeight)
         {
             var pad = 18f;
@@ -111,6 +235,68 @@ namespace MapEditorTool.UI
                 (ClientSize.Height - height) / 2f,
                 width,
                 height);
+        }
+
+        private Portal HitTestPortal(Point point)
+        {
+            if (_map == null || _map.Portals == null)
+                return null;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            var scale = bounds.Width / roomPixelWidth;
+            var hitRadius = Math.Max(8f, 9f * scale);
+
+            for (var i = _map.Portals.Count - 1; i >= 0; i--)
+            {
+                var portal = _map.Portals[i];
+                if (portal == null)
+                    continue;
+
+                var x = bounds.X + portal.X * scale;
+                var y = bounds.Y + portal.Y * scale;
+                var dx = point.X - x;
+                var dy = point.Y - y;
+                if (dx * dx + dy * dy <= hitRadius * hitRadius)
+                    return portal;
+            }
+
+            return null;
+        }
+
+        private PointF ScreenToWorld(Point point)
+        {
+            if (_map == null)
+                return PointF.Empty;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            var scale = bounds.Width / roomPixelWidth;
+            if (scale <= 0f)
+                return PointF.Empty;
+
+            return new PointF((point.X - bounds.X) / scale, (point.Y - bounds.Y) / scale);
+        }
+
+        private PointF ClampToRoom(float x, float y)
+        {
+            if (_map == null)
+                return new PointF(x, y);
+
+            var maxX = Math.Max(1, _map.RoomWidth) * TileSize;
+            var maxY = Math.Max(1, _map.RoomHeight) * TileSize;
+            return new PointF(Clamp(x, 0f, maxX), Clamp(y, 0f, maxY));
+        }
+
+        private static float Clamp(float value, float min, float max)
+        {
+            if (value < min)
+                return min;
+            if (value > max)
+                return max;
+            return value;
         }
 
         private void DrawTextures(Graphics graphics, RectangleF bounds, int roomPixelWidth, int roomPixelHeight)
@@ -449,5 +635,46 @@ namespace MapEditorTool.UI
                     return new PointF(0, 0);
             }
         }
+    }
+
+    internal sealed class PortalMoveCommittedEventArgs : EventArgs
+    {
+        public PortalMoveCommittedEventArgs(Portal portal, float fromX, float fromY, float toX, float toY)
+        {
+            Portal = portal;
+            FromX = fromX;
+            FromY = fromY;
+            ToX = toX;
+            ToY = toY;
+        }
+
+        public Portal Portal { get; private set; }
+        public float FromX { get; private set; }
+        public float FromY { get; private set; }
+        public float ToX { get; private set; }
+        public float ToY { get; private set; }
+        public bool Accepted { get; set; }
+    }
+
+    internal sealed class PortalAddRequestedEventArgs : EventArgs
+    {
+        public PortalAddRequestedEventArgs(float x, float y)
+        {
+            X = x;
+            Y = y;
+        }
+
+        public float X { get; private set; }
+        public float Y { get; private set; }
+    }
+
+    internal sealed class PortalContextRequestedEventArgs : EventArgs
+    {
+        public PortalContextRequestedEventArgs(Portal portal)
+        {
+            Portal = portal;
+        }
+
+        public Portal Portal { get; private set; }
     }
 }

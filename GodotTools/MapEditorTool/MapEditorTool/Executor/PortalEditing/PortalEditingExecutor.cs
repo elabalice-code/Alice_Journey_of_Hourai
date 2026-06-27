@@ -35,6 +35,11 @@ namespace MapEditorTool.Executor.PortalEditing
 
         public PortalEditingResult CreatePortal(string godotRoot, MapProject project, MapDefinition map)
         {
+            return CreatePortal(godotRoot, project, map, 0f, 0f);
+        }
+
+        public PortalEditingResult CreatePortal(string godotRoot, MapProject project, MapDefinition map, float x, float y)
+        {
             godotRoot = ValidateGodotRoot(godotRoot);
             if (map == null)
                 throw new ArgumentNullException("map");
@@ -48,8 +53,8 @@ namespace MapEditorTool.Executor.PortalEditing
                 Id = uniqueName,
                 Name = uniqueName,
                 NodePath = uniqueName,
-                X = 0,
-                Y = 0,
+                X = x,
+                Y = y,
                 TargetMapId = string.Empty,
                 TargetPortalId = string.Empty
             };

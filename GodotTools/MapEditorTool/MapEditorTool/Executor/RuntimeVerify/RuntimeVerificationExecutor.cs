@@ -261,6 +261,7 @@ namespace MapEditorTool.Executor.RuntimeVerify
                 "MapEditorTool UI attaches a resource path editor to PropertyGrid path fields while keeping import side effects in an executor.");
             AddTextCheck(checks, godotRoot, "mapeditortool-portal-editing-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/PortalEditing/PortalEditingExecutor.cs",
                 text => text.Contains("CreatePortal")
+                    && text.Contains("float x, float y")
                     && text.Contains("ApplyPortalPropertyChange")
                     && text.Contains("BuildTargetMapChoices")
                     && text.Contains("BuildTargetAreaChoices")
@@ -282,6 +283,28 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("GodotTileSetLoader")
                     && text.Contains("SetData"),
                 "MapEditorTool UI has a real read-only map preview canvas for imported maps, tile layers, textures, portals, and collision overlays.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-portal-drag", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("PortalMoveCommitted")
+                    && text.Contains("PortalAddRequested")
+                    && text.Contains("PortalContextRequested")
+                    && text.Contains("HitTestPortal")
+                    && text.Contains("ScreenToWorld")
+                    && text.Contains("OnMouseDown")
+                    && text.Contains("OnMouseMove")
+                    && text.Contains("OnMouseUp"),
+                "MapEditorTool map preview supports dragging existing Portal markers, adding Portals, and requesting Portal context actions.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-commits-portal-drag-through-executor", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("MapPreviewCanvasPortalMoveCommitted")
+                    && text.Contains("PortalMoveCommitted")
+                    && text.Contains("MapPreviewCanvasPortalAddRequested")
+                    && text.Contains("MapPreviewCanvasPortalContextRequested")
+                    && text.Contains("OpenPortalLink")
+                    && text.Contains("JumpToPortalTarget")
+                    && text.Contains("AddPortalAtWorld")
+                    && text.Contains("ApplyPortalPropertyChange")
+                    && text.Contains("CreatePortal")
+                    && text.Contains("Portal position"),
+                "MapEditorTool UI commits Portal drag/add changes through PortalEditingExecutor and exposes Portal context navigation.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-drives-collision-overlay", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("RefreshCollisionOverlayFromToolbar")
                     && text.Contains("SetCollisionOverlay")
@@ -297,9 +320,41 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("GraphNode")
                     && text.Contains("SetData"),
                 "MapEditorTool UI has a read-only links preview graph for imported map connections.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-navigation", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
+                text => text.Contains("MapSelected")
+                    && text.Contains("LinkSelected")
+                    && text.Contains("PortalSelected")
+                    && text.Contains("PortalTargetRequested")
+                    && text.Contains("HitTestNode")
+                    && text.Contains("HitTestEdge")
+                    && text.Contains("ShowPortalTargetMenu")
+                    && text.Contains("OnMouseDown"),
+                "MapEditorTool links preview graph can select map nodes, select link edges, and request portal target changes from mouse actions.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-links-preview-navigation", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("LinksPreviewCanvasMapSelected")
+                    && text.Contains("LinksPreviewCanvasLinkSelected")
+                    && text.Contains("LinksPreviewCanvasPortalSelected")
+                    && text.Contains("LinksPreviewCanvasPortalTargetRequested")
+                    && text.Contains("SetPortalLinkTarget")
+                    && text.Contains("RestoreLinkForPortal")
+                    && text.Contains("ApplyPortalPropertyChange")
+                    && text.Contains("SelectMapById")
+                    && text.Contains("SelectLink(e.Link)"),
+                "MapEditorTool UI consumes links preview navigation and portal target events, writes portal targets through the executor, and rolls back model state on write failure.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-link-navigation-state", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("SelectMapById")
+                    && text.Contains("SelectLink(MapLink link)")
+                    && text.Contains("ReferenceEquals(item, link)"),
+                "MapEditorTool ViewModel exposes pure selection methods for links preview navigation.");
             AddTextCheck(checks, godotRoot, "mapeditortool-project-file-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ProjectFile/ProjectFileExecutor.cs",
                 text => text.Contains("LoadProject") && text.Contains("SaveProject"),
                 "MapEditorTool project file executor can load and save MapProject JSON.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-mapproject-removes-link-identities", "GodotTools/MapEditorTool/MapEditorTool/Models/MapProject.cs",
+                text => text.Contains("RemoveMapById")
+                    && text.Contains("AddMapIdentity")
+                    && text.Contains("ScenePath")
+                    && text.Contains("Links.RemoveAll"),
+                "MapEditorTool model removes links by both map Id and scene path identities when deleting a map.");
         }
 
         private static void AddTextCheck(

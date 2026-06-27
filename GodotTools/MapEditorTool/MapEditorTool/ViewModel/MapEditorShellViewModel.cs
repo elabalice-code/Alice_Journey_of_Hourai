@@ -192,6 +192,19 @@ namespace MapEditorTool.ViewModel
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
+        public void SelectMapById(string mapId)
+        {
+            mapId = (mapId ?? string.Empty).Trim();
+            if (!HasCurrentProject || mapId.Length == 0)
+                return;
+
+            var index = _currentProject.Maps.FindIndex(map =>
+                string.Equals((map.Id ?? string.Empty).Trim(), mapId, StringComparison.Ordinal) ||
+                string.Equals((map.ScenePath ?? string.Empty).Trim(), mapId, StringComparison.Ordinal));
+            if (index >= 0)
+                SelectMapByIndex(index);
+        }
+
         public void SelectLinkByIndex(int index)
         {
             if (_currentProject == null || _currentProject.Links == null || _currentProject.Links.Count == 0)
@@ -208,6 +221,16 @@ namespace MapEditorTool.ViewModel
             _snapshot.SelectedLinkIndex = index;
             _snapshot.LinkState = BuildLinkState(SelectedLink);
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void SelectLink(MapLink link)
+        {
+            if (_currentProject == null || _currentProject.Links == null || link == null)
+                return;
+
+            var index = _currentProject.Links.FindIndex(item => ReferenceEquals(item, link));
+            if (index >= 0)
+                SelectLinkByIndex(index);
         }
 
         public void MarkSelectedMapEdited(string propertyName)

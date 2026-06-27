@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Windows.Forms;
 using MapEditorTool.Executor;
 using MapEditorTool.Executor.CollisionLayout;
@@ -281,6 +282,9 @@ namespace MapEditorTool.UI
             mapPlaceholder.Visible = false;
             mapCanvasHost.Controls.Add(_mapPreviewCanvas);
             _mapPreviewCanvas.Dock = DockStyle.Fill;
+            _mapPreviewCanvas.PortalMoveCommitted += MapPreviewCanvasPortalMoveCommitted;
+            _mapPreviewCanvas.PortalAddRequested += MapPreviewCanvasPortalAddRequested;
+            _mapPreviewCanvas.PortalContextRequested += MapPreviewCanvasPortalContextRequested;
             _mapPreviewCanvas.BringToFront();
 
             linksPlaceholder.Text =
@@ -288,7 +292,288 @@ namespace MapEditorTool.UI
             linksPlaceholder.Visible = false;
             linksTabSplit.Panel1.Controls.Add(_linksPreviewCanvas);
             _linksPreviewCanvas.Dock = DockStyle.Fill;
+            _linksPreviewCanvas.MapSelected += LinksPreviewCanvasMapSelected;
+            _linksPreviewCanvas.LinkSelected += LinksPreviewCanvasLinkSelected;
+            _linksPreviewCanvas.PortalSelected += LinksPreviewCanvasPortalSelected;
+            _linksPreviewCanvas.PortalTargetRequested += LinksPreviewCanvasPortalTargetRequested;
             _linksPreviewCanvas.BringToFront();
+        }
+
+        private void MapPreviewCanvasPortalMoveCommitted(object sender, PortalMoveCommittedEventArgs e)
+        {
+            if (e == null || e.Portal == null)
+                return;
+
+            var selectedMap = _viewModel.SelectedMap;
+            if (selectedMap == null)
+                return;
+
+            try
+            {
+                var godotRoot = ResolveGodotRootForEditor();
+                _portalEditingExecutor.ApplyPortalPropertyChange(godotRoot, selectedMap, e.Portal, "X");
+                e.Accepted = true;
+                _viewModel.MarkSelectedMapEdited("Portal position");
+                _viewModel.SetStatusText("Portal moved: " + FormatPortalName(e.Portal));
+                mapPropertyGrid.Refresh();
+            }
+            catch (Exception ex)
+            {
+                e.Accepted = false;
+                _viewModel.SetStatusText("Move portal failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Move portal failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void MapPreviewCanvasPortalAddRequested(object sender, PortalAddRequestedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            var selectedMap = _viewModel.SelectedMap;
+            if (selectedMap == null)
+                return;
+
+            var canvas = sender as Control;
+            var menu = new ContextMenuStrip();
+            menu.Closed += delegate { menu.Dispose(); };
+            var addItem = new ToolStripMenuItem("Add Portal Here");
+            addItem.Click += delegate { AddPortalAtWorld(selectedMap, e.X, e.Y); };
+            menu.Items.Add(addItem);
+
+            if (canvas == null)
+                menu.Show(this, PointToClient(Cursor.Position));
+            else
+                menu.Show(canvas, canvas.PointToClient(Cursor.Position));
+        }
+
+        private void MapPreviewCanvasPortalContextRequested(object sender, PortalContextRequestedEventArgs e)
+        {
+            if (e == null || e.Portal == null)
+                return;
+
+            var selectedMap = _viewModel.SelectedMap;
+            if (selectedMap == null)
+                return;
+
+            var canvas = sender as Control;
+            var menu = new ContextMenuStrip();
+            menu.Closed += delegate { menu.Dispose(); };
+            menu.Items.Add(new ToolStripMenuItem(FormatPortalName(e.Portal)) { Enabled = false });
+
+            var openLink = new ToolStripMenuItem("Open Link");
+            openLink.Click += delegate { OpenPortalLink(selectedMap, e.Portal); };
+            menu.Items.Add(openLink);
+
+            var jumpToTarget = new ToolStripMenuItem("Jump to Target");
+            jumpToTarget.Enabled = !string.IsNullOrWhiteSpace(e.Portal.TargetMapId);
+            jumpToTarget.Click += delegate { JumpToPortalTarget(e.Portal); };
+            menu.Items.Add(jumpToTarget);
+
+            if (canvas == null)
+                menu.Show(this, PointToClient(Cursor.Position));
+            else
+                menu.Show(canvas, canvas.PointToClient(Cursor.Position));
+        }
+
+        private void AddPortalAtWorld(MapDefinition selectedMap, float x, float y)
+        {
+            try
+            {
+                var godotRoot = ResolveGodotRootForEditor();
+                var result = _portalEditingExecutor.CreatePortal(godotRoot, _viewModel.CurrentProject, selectedMap, x, y);
+                if (selectedMap.Portals == null)
+                    selectedMap.Portals = new List<Portal>();
+
+                selectedMap.Portals.Add(result.Portal);
+                _viewModel.MarkSelectedMapEdited("Portals");
+                _viewModel.SetStatusText("Portal created: " + FormatPortalName(result.Portal));
+                mapPropertyGrid.Refresh();
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Create portal failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Create portal failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void OpenPortalLink(MapDefinition map, Portal portal)
+        {
+            if (map == null || portal == null)
+                return;
+
+            var link = FindOrCreateLinkForPortal(NormalizeMapId(map), portal.Id);
+            if (link == null)
+                return;
+
+            _viewModel.SelectLink(link);
+            tabs.SelectedTab = linksTab;
+            ApplySnapshotToUi();
+        }
+
+        private void JumpToPortalTarget(Portal portal)
+        {
+            if (portal == null || string.IsNullOrWhiteSpace(portal.TargetMapId))
+                return;
+
+            _viewModel.SelectMapById(portal.TargetMapId);
+            tabs.SelectedTab = mapTab;
+            ClearCollisionOverlay();
+            RefreshCollisionOverlayFromToolbar(false);
+            ApplySnapshotToUi();
+        }
+
+        private void LinksPreviewCanvasMapSelected(object sender, LinkMapSelectedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            _viewModel.SelectMapById(e.MapId);
+            tabs.SelectedTab = mapTab;
+            ClearCollisionOverlay();
+            RefreshCollisionOverlayFromToolbar(false);
+            ApplySnapshotToUi();
+        }
+
+        private void LinksPreviewCanvasLinkSelected(object sender, LinkSelectedEventArgs e)
+        {
+            if (e == null || e.Link == null)
+                return;
+
+            _viewModel.SelectLink(e.Link);
+            tabs.SelectedTab = linksTab;
+            ApplySnapshotToUi();
+        }
+
+        private void LinksPreviewCanvasPortalSelected(object sender, PortalSelectedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            var link = FindOrCreateLinkForPortal(e.MapId, e.PortalId);
+            if (link != null)
+            {
+                _viewModel.SelectLink(link);
+                tabs.SelectedTab = linksTab;
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void LinksPreviewCanvasPortalTargetRequested(object sender, PortalTargetRequestedEventArgs e)
+        {
+            if (e == null)
+                return;
+
+            SetPortalLinkTarget(e.FromMapId, e.FromPortalId, e.TargetMapId, e.TargetPortalId);
+        }
+
+        private MapLink FindOrCreateLinkForPortal(string fromMapId, string fromPortalId)
+        {
+            var map = FindMapById(fromMapId);
+            if (map == null || map.Portals == null)
+                return null;
+
+            var portal = FindPortalById(map, fromPortalId);
+            if (portal == null)
+                return null;
+
+            var link = FindLinkForPortal(NormalizeMapId(map), fromPortalId);
+            if (link != null)
+                return link;
+
+            var targetMapId = (portal.TargetMapId ?? string.Empty).Trim();
+            if (targetMapId.Length == 0)
+            {
+                var fallback = _viewModel.CurrentProject.Maps.FirstOrDefault(candidate =>
+                    !string.Equals(NormalizeMapId(candidate), NormalizeMapId(map), StringComparison.Ordinal));
+                targetMapId = fallback == null ? NormalizeMapId(map) : NormalizeMapId(fallback);
+            }
+
+            link = new MapLink
+            {
+                From = new LinkEndpoint { MapId = NormalizeMapId(map), PortalId = (portal.Id ?? string.Empty).Trim() },
+                To = new LinkEndpoint { MapId = targetMapId, PortalId = (portal.TargetPortalId ?? string.Empty).Trim() }
+            };
+            _viewModel.CurrentProject.Links.Add(link);
+            _viewModel.MarkSelectedMapEdited("Links");
+            _viewModel.SetStatusText("Link selected: " + link.DisplayName);
+            return link;
+        }
+
+        private void SetPortalLinkTarget(string fromMapId, string fromPortalId, string targetMapId, string targetPortalId)
+        {
+            var map = FindMapById(fromMapId);
+            if (map == null || map.Portals == null)
+                return;
+
+            var portal = FindPortalById(map, fromPortalId);
+            if (portal == null)
+                return;
+
+            var oldTargetMapId = (portal.TargetMapId ?? string.Empty).Trim();
+            var oldTargetPortalId = (portal.TargetPortalId ?? string.Empty).Trim();
+            var existingLink = FindLinkForPortal(NormalizeMapId(map), fromPortalId);
+            var oldLinkToMapId = existingLink == null || existingLink.To == null ? string.Empty : (existingLink.To.MapId ?? string.Empty).Trim();
+            var oldLinkToPortalId = existingLink == null || existingLink.To == null ? string.Empty : (existingLink.To.PortalId ?? string.Empty).Trim();
+            var hadExistingLink = existingLink != null;
+
+            try
+            {
+                targetMapId = (targetMapId ?? string.Empty).Trim();
+                targetPortalId = (targetPortalId ?? string.Empty).Trim();
+                portal.TargetMapId = targetMapId;
+                portal.TargetPortalId = targetPortalId;
+
+                var link = FindLinkForPortal(NormalizeMapId(map), fromPortalId);
+                if (targetMapId.Length == 0)
+                {
+                    if (link != null)
+                        _viewModel.CurrentProject.Links.Remove(link);
+                }
+                else if (link == null)
+                {
+                    link = new MapLink
+                    {
+                        From = new LinkEndpoint { MapId = NormalizeMapId(map), PortalId = (portal.Id ?? string.Empty).Trim() },
+                        To = new LinkEndpoint { MapId = targetMapId, PortalId = targetPortalId }
+                    };
+                    _viewModel.CurrentProject.Links.Add(link);
+                }
+                else
+                {
+                    link.To.MapId = targetMapId;
+                    link.To.PortalId = targetPortalId;
+                }
+
+                var godotRoot = ResolveGodotRootForEditor();
+                _portalEditingExecutor.ApplyPortalPropertyChange(godotRoot, map, portal, "TargetMapId");
+                _viewModel.MarkSelectedMapEdited("Portal target");
+                if (link != null)
+                    _viewModel.SelectLink(link);
+                _viewModel.SetStatusText(targetMapId.Length == 0
+                    ? "Portal link cleared: " + FormatPortalName(portal)
+                    : "Portal link updated: " + FormatPortalName(portal));
+            }
+            catch (Exception ex)
+            {
+                portal.TargetMapId = oldTargetMapId;
+                portal.TargetPortalId = oldTargetPortalId;
+                RestoreLinkForPortal(map, fromPortalId, hadExistingLink, oldLinkToMapId, oldLinkToPortalId);
+                _viewModel.SetStatusText("Set portal target failed: " + ex.Message);
+                MessageBox.Show(this, ex.Message, "Set portal target failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                ApplySnapshotToUi();
+            }
         }
 
         private void NormalizePrototypeLabels()
@@ -956,6 +1241,97 @@ namespace MapEditorTool.UI
             }
 
             return count;
+        }
+
+        private static string FormatPortalName(Portal portal)
+        {
+            if (portal == null)
+                return string.Empty;
+
+            var name = (portal.Name ?? string.Empty).Trim();
+            if (name.Length > 0)
+                return name;
+
+            var id = (portal.Id ?? string.Empty).Trim();
+            if (id.Length > 0)
+                return id;
+
+            return (portal.NodePath ?? string.Empty).Trim();
+        }
+
+        private MapDefinition FindMapById(string mapId)
+        {
+            mapId = (mapId ?? string.Empty).Trim();
+            if (_viewModel.CurrentProject == null || _viewModel.CurrentProject.Maps == null || mapId.Length == 0)
+                return null;
+
+            return _viewModel.CurrentProject.Maps.FirstOrDefault(map =>
+                string.Equals((map.Id ?? string.Empty).Trim(), mapId, StringComparison.Ordinal) ||
+                string.Equals((map.ScenePath ?? string.Empty).Trim(), mapId, StringComparison.Ordinal));
+        }
+
+        private static Portal FindPortalById(MapDefinition map, string portalId)
+        {
+            portalId = (portalId ?? string.Empty).Trim();
+            if (map == null || map.Portals == null || portalId.Length == 0)
+                return null;
+
+            return map.Portals.FirstOrDefault(portal =>
+                string.Equals((portal.Id ?? string.Empty).Trim(), portalId, StringComparison.Ordinal));
+        }
+
+        private MapLink FindLinkForPortal(string fromMapId, string fromPortalId)
+        {
+            fromMapId = (fromMapId ?? string.Empty).Trim();
+            fromPortalId = (fromPortalId ?? string.Empty).Trim();
+            if (_viewModel.CurrentProject == null || _viewModel.CurrentProject.Links == null)
+                return null;
+
+            return _viewModel.CurrentProject.Links.FirstOrDefault(link =>
+                link != null &&
+                link.From != null &&
+                string.Equals((link.From.MapId ?? string.Empty).Trim(), fromMapId, StringComparison.Ordinal) &&
+                string.Equals((link.From.PortalId ?? string.Empty).Trim(), fromPortalId, StringComparison.Ordinal));
+        }
+
+        private void RestoreLinkForPortal(MapDefinition map, string fromPortalId, bool hadExistingLink, string oldTargetMapId, string oldTargetPortalId)
+        {
+            if (_viewModel.CurrentProject == null || _viewModel.CurrentProject.Links == null || map == null)
+                return;
+
+            var fromMapId = NormalizeMapId(map);
+            var link = FindLinkForPortal(fromMapId, fromPortalId);
+            if (!hadExistingLink)
+            {
+                if (link != null)
+                    _viewModel.CurrentProject.Links.Remove(link);
+                return;
+            }
+
+            if (link == null)
+            {
+                link = new MapLink
+                {
+                    From = new LinkEndpoint { MapId = fromMapId, PortalId = (fromPortalId ?? string.Empty).Trim() },
+                    To = new LinkEndpoint()
+                };
+                _viewModel.CurrentProject.Links.Add(link);
+            }
+
+            link.To.MapId = oldTargetMapId ?? string.Empty;
+            link.To.PortalId = oldTargetPortalId ?? string.Empty;
+        }
+
+        private static string NormalizeMapId(MapDefinition map)
+        {
+            if (map == null)
+                return string.Empty;
+
+            var scenePath = (map.ScenePath ?? string.Empty).Trim();
+            if (scenePath.Length > 0)
+                return scenePath;
+
+            return (map.Id ?? string.Empty).Trim();
         }
 
         private void NewProject()
