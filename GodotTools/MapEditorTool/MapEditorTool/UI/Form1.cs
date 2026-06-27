@@ -1389,6 +1389,7 @@ namespace MapEditorTool.UI
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
                 var project = _mapImportExecutor.ImportFromGodotRoot(godotRoot);
                 _viewModel.LoadImportedProject(project, godotRoot);
+                RefreshPinnedStartingMapFromGodot(godotRoot);
                 _undoManager.Clear();
             }
             catch (Exception ex)
@@ -1491,7 +1492,10 @@ namespace MapEditorTool.UI
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
                 if (_gameSettingsExecutor.IsStartingMap(godotRoot, selected.ScenePath))
+                {
                     _gameSettingsExecutor.WriteStartingMap(godotRoot, string.Empty);
+                    _viewModel.SetPinnedStartingMapPath(string.Empty);
+                }
 
                 var result = _mapDeletionExecutor.DeleteMapResources(godotRoot, selected, true);
                 _viewModel.RemoveSelectedMap();
@@ -1586,6 +1590,7 @@ namespace MapEditorTool.UI
 
                 var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
                 var result = _gameSettingsExecutor.WriteStartingMap(godotRoot, selected.ScenePath);
+                _viewModel.SetPinnedStartingMapPath(result.NormalizedStartingMap);
                 _viewModel.SetStatusText("Pinned starting map: " + result.Summary);
             }
             catch (Exception ex)
@@ -1596,6 +1601,31 @@ namespace MapEditorTool.UI
             finally
             {
                 ApplySnapshotToUi();
+            }
+        }
+
+        private void RefreshPinnedStartingMapFromGodot(string godotRoot)
+        {
+            try
+            {
+                var result = _gameSettingsExecutor.ReadStartingMap(godotRoot);
+                _viewModel.SetPinnedStartingMapPath(result.NormalizedStartingMap);
+            }
+            catch
+            {
+                _viewModel.SetPinnedStartingMapPath(string.Empty);
+            }
+        }
+
+        private void RefreshPinnedStartingMapFromCurrentGodotRoot()
+        {
+            try
+            {
+                RefreshPinnedStartingMapFromGodot(ResolveGodotRootForEditor());
+            }
+            catch
+            {
+                _viewModel.SetPinnedStartingMapPath(string.Empty);
             }
         }
 
@@ -2403,9 +2433,31 @@ namespace MapEditorTool.UI
             return (map.Id ?? string.Empty).Trim();
         }
 
+        private bool IsPinnedStartingMap(MapDefinition map)
+        {
+            if (map == null || string.IsNullOrWhiteSpace(map.ScenePath))
+                return false;
+
+            return string.Equals(
+                NormalizeResPath(map.ScenePath),
+                NormalizeResPath(_viewModel.Snapshot.PinnedStartingMapPath),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeResPath(string value)
+        {
+            value = (value ?? string.Empty).Trim().Replace('\\', '/');
+            if (value.Length == 0)
+                return string.Empty;
+            if (value.StartsWith("res://", StringComparison.OrdinalIgnoreCase))
+                return "res://" + value.Substring("res://".Length).TrimStart('/');
+            return value;
+        }
+
         private void NewProject()
         {
             _viewModel.CreateNewProject();
+            _viewModel.SetPinnedStartingMapPath(string.Empty);
             _undoManager.Clear();
         }
 
@@ -2423,6 +2475,7 @@ namespace MapEditorTool.UI
                 {
                     var project = _projectFileExecutor.LoadProject(dialog.FileName);
                     _viewModel.LoadProjectFile(project, dialog.FileName);
+                    RefreshPinnedStartingMapFromCurrentGodotRoot();
                     _undoManager.Clear();
                 }
                 catch (Exception ex)
@@ -2783,6 +2836,8 @@ namespace MapEditorTool.UI
             var text = string.IsNullOrWhiteSpace(map.ScenePath)
                 ? map.DisplayName
                 : map.DisplayName + Environment.NewLine + map.ScenePath;
+            if (IsPinnedStartingMap(map))
+                text = "[Pinned]" + Environment.NewLine + text;
             _toolTip.SetToolTip(mapsList, text);
         }
 

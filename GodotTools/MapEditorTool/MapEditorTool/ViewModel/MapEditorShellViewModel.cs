@@ -172,6 +172,13 @@ namespace MapEditorTool.ViewModel
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
+        public void SetPinnedStartingMapPath(string scenePath)
+        {
+            _snapshot.PinnedStartingMapPath = NormalizeResPath(scenePath);
+            RefreshProjectSnapshot();
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
         public void SelectMapByIndex(int index)
         {
             if (!HasCurrentProject)
@@ -373,15 +380,33 @@ namespace MapEditorTool.ViewModel
             _snapshot.StatusText = decision.StatusText;
         }
 
-        private static string FormatMapName(MapDefinition map)
+        private string FormatMapName(MapDefinition map)
         {
             if (map == null)
                 return string.Empty;
 
-            if (!string.IsNullOrWhiteSpace(map.DisplayName))
-                return map.DisplayName + "  [" + map.ScenePath + "]";
+            var name = !string.IsNullOrWhiteSpace(map.DisplayName)
+                ? map.DisplayName + "  [" + map.ScenePath + "]"
+                : map.ScenePath;
 
-            return map.ScenePath;
+            return IsPinnedStartingMap(map) ? "[Pinned] " + name : name;
+        }
+
+        private bool IsPinnedStartingMap(MapDefinition map)
+        {
+            var scenePath = NormalizeResPath(map == null ? string.Empty : map.ScenePath);
+            return scenePath.Length > 0 &&
+                string.Equals(scenePath, _snapshot.PinnedStartingMapPath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeResPath(string value)
+        {
+            value = (value ?? string.Empty).Trim().Replace('\\', '/');
+            if (value.Length == 0)
+                return string.Empty;
+            if (value.StartsWith("res://", StringComparison.OrdinalIgnoreCase))
+                return "res://" + value.Substring("res://".Length).TrimStart('/');
+            return value;
         }
 
         private static MapShellState BuildMapState(MapDefinition map)

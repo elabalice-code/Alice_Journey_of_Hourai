@@ -241,8 +241,17 @@ namespace MapEditorTool.Executor.RuntimeVerify
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-pins-starting-map", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("PinSelectedMapAsStartingMap")
                     && text.Contains("GameSettingsExecutor")
-                    && text.Contains("WriteStartingMap"),
-                "MapEditorTool UI can pin the selected map as CoreEngine/Game.tscn starting_map.");
+                    && text.Contains("WriteStartingMap")
+                    && text.Contains("RefreshPinnedStartingMapFromGodot")
+                    && text.Contains("IsPinnedStartingMap"),
+                "MapEditorTool UI can pin the selected map as CoreEngine/Game.tscn starting_map and refresh pinned map indicators.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-pinned-map-label", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("SetPinnedStartingMapPath")
+                    && text.Contains("PinnedStartingMapPath")
+                    && text.Contains("[Pinned]")
+                    && text.Contains("IsPinnedStartingMap")
+                    && text.Contains("NormalizeResPath"),
+                "MapEditorTool ViewModel marks the pinned starting map in the map list snapshot.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-loads-saves-collision-layouts", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("InitializeSelectedMapCollision")
                     && text.Contains("LoadSelectedMapCollision")

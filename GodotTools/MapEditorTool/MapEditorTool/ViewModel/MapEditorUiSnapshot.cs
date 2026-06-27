@@ -16,6 +16,7 @@ namespace MapEditorTool.ViewModel
             LastDeveloperComment = string.Empty;
             LastReportSummary = string.Empty;
             CurrentProjectPath = string.Empty;
+            PinnedStartingMapPath = string.Empty;
             DeveloperCommentRequestSource = string.Empty;
             DeveloperCommentState = new DeveloperCommentSignalState();
         }
@@ -30,6 +31,7 @@ namespace MapEditorTool.ViewModel
         public string LastDeveloperComment { get; set; }
         public string LastReportSummary { get; set; }
         public string CurrentProjectPath { get; set; }
+        public string PinnedStartingMapPath { get; set; }
         public bool ProjectDirty { get; set; }
         public int SignalCount { get; set; }
         public DateTimeOffset LastUpdatedAt { get; set; }
