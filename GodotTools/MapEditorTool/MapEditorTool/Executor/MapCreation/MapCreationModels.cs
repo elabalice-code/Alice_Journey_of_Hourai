@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using System.Runtime.Serialization;
+using System.Text.Json;
 using MapEditorTool.Models;
 
 namespace MapEditorTool.Executor.MapCreation
@@ -27,7 +27,8 @@ namespace MapEditorTool.Executor.MapCreation
         public string Summary { get; set; }
     }
 
-    [DataContract]
+    // Serialized with System.Text.Json + CamelCase (see CollisionLayoutJson.Options) so collision JSON
+    // stays wire-compatible with files written by the legacy editor and with the game side.
     public sealed class CollisionLayoutData
     {
         public CollisionLayoutData()
@@ -36,16 +37,12 @@ namespace MapEditorTool.Executor.MapCreation
             Polygons = new List<List<GodotVector2Data>>();
         }
 
-        [DataMember(Order = 0)]
         public int RoomWidth { get; set; }
 
-        [DataMember(Order = 1)]
         public int RoomHeight { get; set; }
 
-        [DataMember(Order = 2)]
         public bool[] Solid { get; set; }
 
-        [DataMember(Order = 3)]
         public List<List<GodotVector2Data>> Polygons { get; set; }
 
         public static CollisionLayoutData Create(int roomWidth, int roomHeight)
@@ -62,13 +59,22 @@ namespace MapEditorTool.Executor.MapCreation
         }
     }
 
-    [DataContract]
     public sealed class GodotVector2Data
     {
-        [DataMember(Order = 0)]
         public float X { get; set; }
 
-        [DataMember(Order = 1)]
         public float Y { get; set; }
+    }
+
+    // CamelCase options mirroring the legacy editor's JsonOptions.Default (System.Text.Json +
+    // JsonNamingPolicy.CamelCase, indented). Keeps collision .json files readable by both the
+    // old tool and the Godot side, and lets the new tool load legacy camelCase files.
+    internal static class CollisionLayoutJson
+    {
+        public static readonly JsonSerializerOptions Options = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = true
+        };
     }
 }

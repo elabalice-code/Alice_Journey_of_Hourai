@@ -22,6 +22,8 @@ using MapEditorTool.Executor.RuntimeVerify;
 using MapEditorTool.Executor.ScenePatch;
 using MapEditorTool.Executor.TileCollision;
 using MapEditorTool.Models;
+using MapEditorTool.SignalWeaver.Featuror.MapEditor.MapGraph.Selection;
+using MapEditorTool.SignalWeaver.Featuror.MapEditor.MapProject.Mutation;
 using MapEditorTool.ViewModel;
 
 namespace MapEditorTool.UI
@@ -50,6 +52,9 @@ namespace MapEditorTool.UI
         private readonly MapEditorShellViewModel _viewModel;
         private readonly MapPreviewCanvas _mapPreviewCanvas;
         private readonly LinksPreviewCanvas _linksPreviewCanvas;
+        private readonly Panel _mapPropertyDrawerHost;
+        private readonly Panel _mapPropertyDrawerBody;
+        private readonly Button _mapPropertyDrawerToggleButton;
         private readonly ToolTip _toolTip;
         private MapEditorTool.Executor.MapCreation.CollisionLayoutData _currentCollisionOverlay;
         private CollisionLayoutTarget _currentCollisionOverlayTarget;
@@ -61,6 +66,7 @@ namespace MapEditorTool.UI
         private bool _isDeveloperCommentBoxOpen;
         private bool _isApplyingSnapshot;
         private bool _isReplayingUndo;
+        private bool _isMapPropertyDrawerExpanded;
 
         public Form1()
         {
@@ -69,6 +75,9 @@ namespace MapEditorTool.UI
             _undoManager = new UndoManager();
             _mapPreviewCanvas = new MapPreviewCanvas();
             _linksPreviewCanvas = new LinksPreviewCanvas();
+            _mapPropertyDrawerHost = new Panel();
+            _mapPropertyDrawerBody = new Panel();
+            _mapPropertyDrawerToggleButton = new Button();
             _toolTip = new ToolTip
             {
                 AutoPopDelay = 12000,
@@ -109,6 +118,12 @@ namespace MapEditorTool.UI
             WireDeveloperInteractionHandlers(linkListContextMenu);
 
             ApplySnapshotToUi();
+            Shown += Form1Shown;
+        }
+
+        private void Form1Shown(object sender, EventArgs e)
+        {
+            AutoImportMapsOnStartup();
         }
 
         private void BuildMapEditorShell()
@@ -257,62 +272,40 @@ namespace MapEditorTool.UI
             {
                 Name = "collisionEditModeCombo",
                 DropDownStyle = ComboBoxStyle.DropDownList,
-                Width = 140
+                Width = 100
             };
-            collisionEditMode.Items.AddRange(new object[] { "TileSet Collision", "Collision Layout" });
-            collisionEditMode.SelectedIndex = 1;
+            collisionEditMode.Items.AddRange(new object[] { "Tile", "SVG" });
+            collisionEditMode.SelectedIndex = 0;
 
-            var collisionMode = new ToolStripComboBox
-            {
-                Name = "collisionModeCombo",
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Width = 140
-            };
-            collisionMode.Items.AddRange(new object[] { "Tile Foreground", "Foreground Texture" });
-            collisionMode.SelectedIndex = 0;
-
-            var collisionTarget = new ToolStripComboBox
-            {
-                Name = "collisionTargetCombo",
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Width = 160
-            };
-            collisionTarget.Items.AddRange(new object[] { "Tile Collision File", "Foreground Texture Collision File" });
-            collisionTarget.SelectedIndex = 0;
             viewMode.SelectedIndexChanged += MapToolSelectionChanged;
             collisionEditMode.SelectedIndexChanged += MapToolSelectionChanged;
-            collisionMode.SelectedIndexChanged += MapToolSelectionChanged;
-            collisionTarget.SelectedIndexChanged += MapToolSelectionChanged;
 
             mapTools.Items.Add(new ToolStripLabel("View") { Name = "viewModeLabel" });
             mapTools.Items.Add(viewMode);
             mapTools.Items.Add(new ToolStripSeparator());
             mapTools.Items.Add(new ToolStripLabel("Edit") { Name = "collisionEditModeLabel" });
             mapTools.Items.Add(collisionEditMode);
-            mapTools.Items.Add(new ToolStripLabel("Active") { Name = "collisionModeLabel" });
-            mapTools.Items.Add(collisionMode);
             mapTools.Items.Add(new ToolStripSeparator());
             mapTools.Items.Add(new ToolStripLabel("Tool") { Name = "toolModeLabel" });
             var selectTool = CreateToolButton("Select(S)", "tool.select", true);
+            var vertexTool = CreateToolButton("Vertex(Q)", "tool.vertex", true);
             _isApplyingSnapshot = true;
             try
             {
-                selectTool.Checked = true;
+                vertexTool.Checked = true;
             }
             finally
             {
                 _isApplyingSnapshot = false;
             }
             mapTools.Items.Add(selectTool);
-            mapTools.Items.Add(CreateToolButton("Vertex(Q)", "tool.vertex", true));
+            mapTools.Items.Add(vertexTool);
             mapTools.Items.Add(CreateToolButton("Move(W)", "tool.move", true));
             mapTools.Items.Add(CreateToolButton("Rotate(E)", "tool.rotate", true));
             mapTools.Items.Add(CreateToolButton("Scale(R)", "tool.scale", true));
             mapTools.Items.Add(new ToolStripSeparator());
             mapTools.Items.Add(CreateToolButton("Add Box(A)", "tool.addSquareCollision", true));
             mapTools.Items.Add(CreateToolButton("Remove Collision(D)", "tool.removeCollision", true));
-            mapTools.Items.Add(new ToolStripLabel("Collision Target") { Name = "collisionTargetLabel" });
-            mapTools.Items.Add(collisionTarget);
             mapTools.Items.Add(CreateToolButton("Initialize", "tool.collisionInitialize", false));
             mapTools.Items.Add(CreateToolButton("Load", "tool.collisionLoad", false));
             mapTools.Items.Add(CreateToolButton("Save", "tool.collisionSave", false));
@@ -364,6 +357,9 @@ namespace MapEditorTool.UI
             _mapPreviewCanvas.GetEntityHoverText = BuildEntityHoverText;
             _mapPreviewCanvas.HoverHintRequested += CanvasHoverHintRequested;
             _mapPreviewCanvas.BringToFront();
+            BuildMapPropertyDrawer();
+            mapTab.Resize += MapPropertyDrawerContainerResized;
+            mapTabSplit.SplitterMoved += MapPropertyDrawerContainerResized;
 
             linksPlaceholder.Text =
                 string.Empty;
@@ -376,6 +372,103 @@ namespace MapEditorTool.UI
             _linksPreviewCanvas.PortalTargetRequested += LinksPreviewCanvasPortalTargetRequested;
             _linksPreviewCanvas.HoverHintRequested += CanvasHoverHintRequested;
             _linksPreviewCanvas.BringToFront();
+        }
+
+        private void BuildMapPropertyDrawer()
+        {
+            mapTab.Controls.Add(_mapPropertyDrawerHost);
+            _mapPropertyDrawerHost.Name = "mapPropertyDrawerHost";
+            _mapPropertyDrawerHost.Visible = true;
+            _mapPropertyDrawerHost.BorderStyle = BorderStyle.FixedSingle;
+            _mapPropertyDrawerHost.BackColor = System.Drawing.SystemColors.Control;
+            _mapPropertyDrawerHost.Anchor = AnchorStyles.Top | AnchorStyles.Right | AnchorStyles.Bottom;
+            _mapPropertyDrawerHost.Controls.Add(_mapPropertyDrawerBody);
+            _mapPropertyDrawerHost.Controls.Add(_mapPropertyDrawerToggleButton);
+
+            _mapPropertyDrawerToggleButton.Name = "mapPropertyDrawerToggleButton";
+            _mapPropertyDrawerToggleButton.Text = "←";
+            _mapPropertyDrawerToggleButton.Width = 28;
+            _mapPropertyDrawerToggleButton.Dock = DockStyle.Left;
+            _mapPropertyDrawerToggleButton.FlatStyle = FlatStyle.System;
+            _mapPropertyDrawerToggleButton.Click += MapPropertyDrawerToggleButtonClick;
+
+            _mapPropertyDrawerBody.Name = "mapPropertyDrawerBody";
+            _mapPropertyDrawerBody.Dock = DockStyle.Fill;
+
+            _toolTip.SetToolTip(_mapPropertyDrawerToggleButton, "Expand or collapse map properties");
+            UpdateMapPropertyDrawerLayout();
+        }
+
+        private void MapPropertyDrawerContainerResized(object sender, EventArgs e)
+        {
+            UpdateMapPropertyDrawerLayout();
+        }
+
+        private void MapPropertyDrawerToggleButtonClick(object sender, EventArgs e)
+        {
+            SetMapPropertyDrawerExpanded(!_isMapPropertyDrawerExpanded);
+        }
+
+        private void SetMapPropertyDrawerExpanded(bool expanded)
+        {
+            if (_isMapPropertyDrawerExpanded == expanded)
+                return;
+
+            _isMapPropertyDrawerExpanded = expanded;
+            UpdateMapPropertyDrawerLayout();
+        }
+
+        private void UpdateMapPropertyDrawerLayout()
+        {
+            if (_isMapPropertyDrawerExpanded)
+                ExpandMapPropertyDrawer();
+            else
+                CollapseMapPropertyDrawer();
+        }
+
+        private void ExpandMapPropertyDrawer()
+        {
+            _mapPropertyDrawerBody.Visible = true;
+            var targetWidth = Math.Min(Math.Max(mapPropertyPanel.Width + 360, 640), Math.Max(360, mapTab.ClientSize.Width - 24));
+            var height = Math.Max(0, mapTab.ClientSize.Height - mapTab.Padding.Top - mapTab.Padding.Bottom);
+            _mapPropertyDrawerHost.Bounds = new System.Drawing.Rectangle(
+                Math.Max(mapTab.Padding.Left, mapTab.ClientSize.Width - mapTab.Padding.Right - targetWidth),
+                mapTab.Padding.Top,
+                targetWidth,
+                height);
+
+            MoveMapPropertyPanelTo(_mapPropertyDrawerBody);
+            _mapPropertyDrawerHost.Visible = true;
+            _mapPropertyDrawerHost.BringToFront();
+            _mapPropertyDrawerToggleButton.Text = "→";
+        }
+
+        private void CollapseMapPropertyDrawer()
+        {
+            MoveMapPropertyPanelTo(mapTabSplit.Panel2);
+            _mapPropertyDrawerBody.Visible = false;
+            var panelOrigin = mapTab.PointToClient(mapTabSplit.Panel2.PointToScreen(new System.Drawing.Point(0, 0)));
+            var height = Math.Max(52, mapTabSplit.Panel2.Height);
+            _mapPropertyDrawerHost.Bounds = new System.Drawing.Rectangle(
+                Math.Max(mapTab.Padding.Left, panelOrigin.X),
+                Math.Max(mapTab.Padding.Top, panelOrigin.Y),
+                _mapPropertyDrawerToggleButton.Width,
+                height);
+            _mapPropertyDrawerHost.Visible = true;
+            _mapPropertyDrawerHost.BringToFront();
+            _mapPropertyDrawerToggleButton.Text = "←";
+        }
+
+        private void MoveMapPropertyPanelTo(Control parent)
+        {
+            if (ReferenceEquals(mapPropertyPanel.Parent, parent))
+                return;
+
+            if (mapPropertyPanel.Parent != null)
+                mapPropertyPanel.Parent.Controls.Remove(mapPropertyPanel);
+            parent.Controls.Add(mapPropertyPanel);
+            mapPropertyPanel.Dock = DockStyle.Fill;
+            mapPropertyPanel.BringToFront();
         }
 
         private void MapPreviewCanvasPortalMoveCommitted(object sender, PortalMoveCommittedEventArgs e)
@@ -549,7 +642,7 @@ namespace MapEditorTool.UI
             if (link == null)
                 return;
 
-            _viewModel.SelectLink(link);
+            SubmitMapGraphLinkSelection("OpenPortalLink", link);
             tabs.SelectedTab = linksTab;
             ApplySnapshotToUi();
         }
@@ -559,7 +652,7 @@ namespace MapEditorTool.UI
             if (portal == null || string.IsNullOrWhiteSpace(portal.TargetMapId))
                 return;
 
-            _viewModel.SelectMapById(portal.TargetMapId);
+            SubmitMapGraphMapSelectionById("JumpToPortalTarget", portal.TargetMapId);
             tabs.SelectedTab = mapTab;
             ClearCollisionOverlay();
             RefreshCollisionOverlayFromToolbar(false);
@@ -939,7 +1032,7 @@ namespace MapEditorTool.UI
             if (e == null)
                 return;
 
-            _viewModel.SelectMapById(e.MapId);
+            SubmitMapGraphMapSelectionById(DescribeSource(sender), e.MapId);
             tabs.SelectedTab = mapTab;
             ClearCollisionOverlay();
             RefreshCollisionOverlayFromToolbar(false);
@@ -951,7 +1044,7 @@ namespace MapEditorTool.UI
             if (e == null || e.Link == null)
                 return;
 
-            _viewModel.SelectLink(e.Link);
+            SubmitMapGraphLinkSelection(DescribeSource(sender), e.Link);
             tabs.SelectedTab = linksTab;
             ApplySnapshotToUi();
         }
@@ -964,7 +1057,7 @@ namespace MapEditorTool.UI
             var link = FindOrCreateLinkForPortal(e.MapId, e.PortalId);
             if (link != null)
             {
-                _viewModel.SelectLink(link);
+                SubmitMapGraphLinkSelection(DescribeSource(sender), link);
                 tabs.SelectedTab = linksTab;
                 ApplySnapshotToUi();
             }
@@ -1096,7 +1189,7 @@ namespace MapEditorTool.UI
                     link != null);
                 _viewModel.MarkSelectedMapEdited("Portal target");
                 if (link != null)
-                    _viewModel.SelectLink(link);
+                    SubmitMapGraphLinkSelection("SetPortalLinkTarget", link);
                 _viewModel.SetStatusText(targetMapId.Length == 0
                     ? "Portal link cleared: " + FormatPortalName(portal)
                     : "Portal link updated: " + FormatPortalName(portal));
@@ -1143,13 +1236,10 @@ namespace MapEditorTool.UI
             SetToolStripItemText(mainMenu, "menu.developer.clearStatus", "Clear Status");
 
             SetToolStripComboItems(mapTools, "viewModeCombo", new object[] { "Map", "Collision" }, 0);
-            SetToolStripComboItems(mapTools, "collisionEditModeCombo", new object[] { "TileSet Collision", "Collision Layout" }, 1);
-            SetToolStripComboItems(mapTools, "collisionModeCombo", new object[] { "Tile Foreground", "Foreground Texture" }, 0);
-            SetToolStripComboItems(mapTools, "collisionTargetCombo", new object[] { "Tile Collision File", "Foreground Texture Collision File" }, 0);
+            SetToolStripComboItems(mapTools, "collisionEditModeCombo", new object[] { "Tile", "SVG" }, 0);
 
             SetToolStripItemText(mapTools, "viewModeLabel", "View");
             SetToolStripItemText(mapTools, "collisionEditModeLabel", "Edit");
-            SetToolStripItemText(mapTools, "collisionModeLabel", "Active");
             SetToolStripItemText(mapTools, "toolModeLabel", "Tool");
             SetToolStripItemText(mapTools, "tool.select", "Select(S)");
             SetToolStripItemText(mapTools, "tool.vertex", "Vertex(Q)");
@@ -1158,7 +1248,6 @@ namespace MapEditorTool.UI
             SetToolStripItemText(mapTools, "tool.scale", "Scale(R)");
             SetToolStripItemText(mapTools, "tool.addSquareCollision", "Add Box(A)");
             SetToolStripItemText(mapTools, "tool.removeCollision", "Remove Collision(D)");
-            SetToolStripItemText(mapTools, "collisionTargetLabel", "Collision Target");
             SetToolStripItemText(mapTools, "tool.collisionInitialize", "Initialize");
             SetToolStripItemText(mapTools, "tool.collisionLoad", "Load");
             SetToolStripItemText(mapTools, "tool.collisionSave", "Save");
@@ -1179,6 +1268,17 @@ namespace MapEditorTool.UI
             combo.Items.Clear();
             combo.Items.AddRange(items);
             if (selectedIndex >= 0 && selectedIndex < combo.Items.Count)
+                combo.SelectedIndex = selectedIndex;
+        }
+
+        private static void SetToolStripComboSelectedIndex(ToolStrip toolStrip, string itemName, int selectedIndex)
+        {
+            var combo = FindToolStripItem(toolStrip.Items, itemName) as ToolStripComboBox;
+            if (combo == null)
+                return;
+            if (selectedIndex < 0 || selectedIndex >= combo.Items.Count)
+                return;
+            if (combo.SelectedIndex != selectedIndex)
                 combo.SelectedIndex = selectedIndex;
         }
 
@@ -1280,13 +1380,24 @@ namespace MapEditorTool.UI
 
             if (ReferenceEquals(sender, developerCommentModeCheckBox) || ReferenceEquals(sender, developerCommentPanel))
                 return;
+            if (ReferenceEquals(sender, _mapPropertyDrawerToggleButton))
+                return;
+            if (ReferenceEquals(sender, mapsList) || ReferenceEquals(sender, linksList))
+                return;
 
             var source = DescribeSource(sender);
-            var sourceSignal = UiSignalFactory.Click(source, e == null ? "Click" : e.GetType().Name);
-            _viewModel.SubmitDeveloperCommentClick(sourceSignal);
-            ExecuteTerminalUiAction(sender, source);
+            var sourceSignal = UiSignalFactory.Click(source, e == null ? "Click" : e.GetType().Name, GetTerminalActionKey(sender));
+            _viewModel.SubmitUiClick(sourceSignal);
+            ConsumeTerminalActionRequest(sender, source);
             ApplySnapshotToUi();
+            ConsumeDeveloperCommentRequest();
+        }
 
+        // DeveloperComment is the always-available developer mailbox. Do not remove this consumer from UI signal paths.
+        private void ConsumeDeveloperCommentRequest()
+        {
+            if (_isDeveloperCommentBoxOpen)
+                return;
             if (!_viewModel.Snapshot.DeveloperCommentOpenRequested)
                 return;
 
@@ -1301,7 +1412,7 @@ namespace MapEditorTool.UI
                 {
                     if (box.ShowDialog(this) != DialogResult.OK)
                     {
-                        statusText.Text = "Developer comment canceled: " + commentSource;
+                        SetDeveloperCommentStatus("Developer comment canceled: " + commentSource);
                         return;
                     }
                 }
@@ -1311,11 +1422,106 @@ namespace MapEditorTool.UI
                 }
 
                 _developerCommentExecutor.WriteComment(commentSource, box.CommentText);
-                statusText.Text = "Developer comment logged: " + commentSource;
+                SetDeveloperCommentStatus("Developer comment logged: " + commentSource);
             }
         }
 
-        private void ExecuteTerminalUiAction(object sender, string sourceDescription)
+        private void SetDeveloperCommentStatus(string status)
+        {
+            // Keep the mailbox notification in the ViewModel snapshot so ApplySnapshotToUi does not erase it.
+            _viewModel.SetStatusText(status);
+            statusText.Text = _viewModel.Snapshot.StatusText;
+        }
+
+        private void ConsumeTerminalActionRequest(object sender, string sourceDescription)
+        {
+            if (!_viewModel.Snapshot.TerminalActionRequested)
+                return;
+
+            var actionKey = _viewModel.Snapshot.TerminalActionKey;
+            var mapProjectMutationKind = _viewModel.Snapshot.MapProjectMutationRequested
+                ? _viewModel.Snapshot.MapProjectMutationKind
+                : MapProjectMutationKind.None;
+            var mapProjectMutationKey = _viewModel.Snapshot.MapProjectMutationRequested
+                ? _viewModel.Snapshot.MapProjectMutationActionKey
+                : string.Empty;
+            var persistenceActionKey = _viewModel.Snapshot.PersistenceActionRequested
+                ? _viewModel.Snapshot.PersistenceActionKey
+                : string.Empty;
+            _viewModel.ConsumeTerminalActionRequest();
+            if (_viewModel.Snapshot.MapProjectMutationRequested)
+                _viewModel.ConsumeMapProjectMutationRequest();
+            if (_viewModel.Snapshot.PersistenceActionRequested)
+                _viewModel.ConsumePersistenceActionRequest();
+
+            var item = sender as ToolStripItem;
+            if (item == null || !string.Equals(item.Name, actionKey, StringComparison.Ordinal))
+                return;
+            if (!string.IsNullOrWhiteSpace(mapProjectMutationKey) &&
+                !string.Equals(item.Name, mapProjectMutationKey, StringComparison.Ordinal))
+                return;
+            if (!string.IsNullOrWhiteSpace(persistenceActionKey) &&
+                !string.Equals(item.Name, persistenceActionKey, StringComparison.Ordinal))
+                return;
+
+            ExecuteTerminalUiAction(sender, sourceDescription, mapProjectMutationKind);
+        }
+
+        private MapGraphSelectionSignalDecision SubmitMapGraphMapSelectionById(string sourceDescription, string mapId)
+        {
+            var decision = _viewModel.SubmitMapSelectionById(
+                UiSignalFactory.SelectionChanged(sourceDescription, "MapGraphMapSelection", mapId));
+            ConsumeDeveloperCommentRequest();
+            return decision;
+        }
+
+        private MapGraphSelectionSignalDecision SubmitMapGraphLinkSelection(string sourceDescription, MapLink link)
+        {
+            var decision = _viewModel.SubmitLinkSelectionByKey(
+                UiSignalFactory.SelectionChanged(sourceDescription, "MapGraphLinkSelection", MapEditorShellViewModel.BuildLinkKey(link)));
+            ConsumeDeveloperCommentRequest();
+            return decision;
+        }
+
+        private static string GetTerminalActionKey(object sender)
+        {
+            var item = sender as ToolStripItem;
+            var name = item == null ? string.Empty : item.Name ?? string.Empty;
+            return IsTerminalActionKey(name) ? name : string.Empty;
+        }
+
+        private static bool IsTerminalActionKey(string name)
+        {
+            return
+                string.Equals(name, "menu.file.importFromGodot", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.file.applySelectedMapToGodot", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.file.newProject", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.file.openProject", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.file.saveProject", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.file.saveProjectAs", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.file.exit", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.view.map", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.edit.undo", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.edit.redo", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.view.collision", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.view.links", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.developer.clearStatus", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.developer.openLog", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.developer.mapStatus", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.developer.portalReview", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.developer.validateCurrentImport", StringComparison.Ordinal) ||
+                string.Equals(name, "menu.developer.runtimeVerify", StringComparison.Ordinal) ||
+                string.Equals(name, "context.maps.add", StringComparison.Ordinal) ||
+                string.Equals(name, "context.maps.delete", StringComparison.Ordinal) ||
+                string.Equals(name, "context.maps.pin", StringComparison.Ordinal) ||
+                string.Equals(name, "context.links.add", StringComparison.Ordinal) ||
+                string.Equals(name, "context.links.delete", StringComparison.Ordinal) ||
+                string.Equals(name, "tool.collisionInitialize", StringComparison.Ordinal) ||
+                string.Equals(name, "tool.collisionLoad", StringComparison.Ordinal) ||
+                string.Equals(name, "tool.collisionSave", StringComparison.Ordinal);
+        }
+
+        private void ExecuteTerminalUiAction(object sender, string sourceDescription, MapProjectMutationKind mapProjectMutationKind)
         {
             var item = sender as ToolStripItem;
             if (item == null)
@@ -1395,23 +1601,23 @@ namespace MapEditorTool.UI
             }
             else if (string.Equals(item.Name, "context.maps.add", StringComparison.Ordinal))
             {
-                AddMap();
+                ExecuteMapProjectMutation(MapProjectMutationKind.AddMap, mapProjectMutationKind);
             }
             else if (string.Equals(item.Name, "context.maps.delete", StringComparison.Ordinal))
             {
-                DeleteSelectedMap();
+                ExecuteMapProjectMutation(MapProjectMutationKind.DeleteMap, mapProjectMutationKind);
             }
             else if (string.Equals(item.Name, "context.maps.pin", StringComparison.Ordinal))
             {
-                PinSelectedMapAsStartingMap();
+                ExecuteMapProjectMutation(MapProjectMutationKind.PinMap, mapProjectMutationKind);
             }
             else if (string.Equals(item.Name, "context.links.add", StringComparison.Ordinal))
             {
-                AddLink();
+                ExecuteMapProjectMutation(MapProjectMutationKind.AddLink, mapProjectMutationKind);
             }
             else if (string.Equals(item.Name, "context.links.delete", StringComparison.Ordinal))
             {
-                DeleteSelectedLink();
+                ExecuteMapProjectMutation(MapProjectMutationKind.DeleteLink, mapProjectMutationKind);
             }
             else if (string.Equals(item.Name, "tool.collisionInitialize", StringComparison.Ordinal))
             {
@@ -1427,21 +1633,65 @@ namespace MapEditorTool.UI
             }
         }
 
+        private void ExecuteMapProjectMutation(MapProjectMutationKind expectedKind, MapProjectMutationKind actualKind)
+        {
+            if (actualKind != expectedKind)
+                return;
+
+            switch (expectedKind)
+            {
+                case MapProjectMutationKind.AddMap:
+                    AddMap();
+                    break;
+                case MapProjectMutationKind.DeleteMap:
+                    DeleteSelectedMap();
+                    break;
+                case MapProjectMutationKind.PinMap:
+                    PinSelectedMapAsStartingMap();
+                    break;
+                case MapProjectMutationKind.AddLink:
+                    AddLink();
+                    break;
+                case MapProjectMutationKind.DeleteLink:
+                    DeleteSelectedLink();
+                    break;
+            }
+        }
+
         private void ImportFromGodot(string sourceDescription)
         {
             try
             {
-                var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
-                var project = _mapImportExecutor.ImportFromGodotRoot(godotRoot);
-                _viewModel.LoadImportedProject(project, godotRoot);
-                RefreshPinnedStartingMapFromGodot(godotRoot);
-                _undoManager.Clear();
+                ImportCurrentGodotProject(sourceDescription);
             }
             catch (Exception ex)
             {
                 _viewModel.SetStatusText("Import failed: " + ex.Message);
                 MessageBox.Show(this, ex.Message, "Import from Godot failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        private void AutoImportMapsOnStartup()
+        {
+            try
+            {
+                ImportCurrentGodotProject("startup auto import");
+                ApplySnapshotToUi();
+            }
+            catch (Exception ex)
+            {
+                _viewModel.SetStatusText("Startup import skipped: " + ex.Message);
+                ApplySnapshotToUi();
+            }
+        }
+
+        private void ImportCurrentGodotProject(string sourceDescription)
+        {
+            var godotRoot = GodotProjectLocator.FindGodotRoot(GetGodotSearchStartDirectory());
+            var project = _mapImportExecutor.ImportFromGodotRoot(godotRoot);
+            _viewModel.LoadImportedProject(project, string.IsNullOrWhiteSpace(sourceDescription) ? godotRoot : sourceDescription);
+            RefreshPinnedStartingMapFromGodot(godotRoot);
+            _undoManager.Clear();
         }
 
         private void OpenDeveloperCommentLog()
@@ -2023,7 +2273,7 @@ namespace MapEditorTool.UI
             _portalEditingExecutor.ApplyPortalPropertyChange(godotRoot, map, portal, "TargetMapId");
             var link = FindLinkForPortal(NormalizeMapId(map), portalId);
             if (link != null)
-                _viewModel.SelectLink(link);
+                SubmitMapGraphLinkSelection("ApplyPortalTargetUndoSnapshot", link);
             _linksPreviewCanvas.Invalidate();
             mapPropertyGrid.Refresh();
             _viewModel.MarkSelectedMapEdited("Portal target undo");
@@ -2051,12 +2301,12 @@ namespace MapEditorTool.UI
             var selectedToolItem = sender as ToolStripItem;
             var isToolButton = selectedToolItem != null && IsCollisionToolButton(selectedToolItem.Name);
             ApplyCollisionToolButtonSelection(selectedToolItem);
+            SubmitMapCanvasToolModeChanged(DescribeSource(sender), e == null ? "ValueChanged" : e.GetType().Name);
             if (!isToolButton)
             {
                 ApplyCollisionModeSelectionToMap();
                 RefreshCollisionOverlayFromToolbar(false);
             }
-            UpdateCollisionEditorState();
             ApplySnapshotToUi();
         }
 
@@ -2075,9 +2325,7 @@ namespace MapEditorTool.UI
 
             e.Accepted = true;
             ApplyCollisionToolButtonSelection(toolItem);
-            UpdateCollisionEditorState();
-            _viewModel.SetStatusText("Collision tool selected: " + GetCollisionToolDisplayName(e.Tool));
-            statusText.Text = _viewModel.Snapshot.StatusText;
+            SubmitMapCanvasToolModeChanged(DescribeSource(sender), "CollisionToolShortcutRequested");
             ApplySnapshotToUi();
         }
 
@@ -2086,6 +2334,7 @@ namespace MapEditorTool.UI
             if (selectedItem == null || !IsCollisionToolButton(selectedItem.Name))
                 return;
 
+            var wasApplyingSnapshot = _isApplyingSnapshot;
             _isApplyingSnapshot = true;
             try
             {
@@ -2098,39 +2347,87 @@ namespace MapEditorTool.UI
             }
             finally
             {
-                _isApplyingSnapshot = false;
+                _isApplyingSnapshot = wasApplyingSnapshot;
             }
         }
 
-        private void UpdateCollisionEditorState()
+        private void SubmitMapCanvasToolModeChanged(string sourceDescription, string eventName)
         {
-            _mapPreviewCanvas.SetCollisionEditorState(GetSelectedCollisionEditorMode(), GetSelectedCollisionEditorTool());
+            _viewModel.SubmitMapCanvasToolModeChanged(
+                UiSignalFactory.ValueChanged(
+                    sourceDescription,
+                    eventName,
+                    GetSelectedViewModeKey(),
+                    GetSelectedCollisionEditModeKey(),
+                    GetSelectedCollisionToolKey(),
+                    string.Empty,
+                    string.Empty));
+            ConsumeDeveloperCommentRequest();
         }
 
         private CollisionEditorMode GetSelectedCollisionEditorMode()
         {
-            var combo = FindToolStripItem(mapTools.Items, "collisionEditModeCombo") as ToolStripComboBox;
-            return combo != null && combo.SelectedIndex == 0
-                ? CollisionEditorMode.TileSetCollision
-                : CollisionEditorMode.CollisionLayout;
+            return ToCollisionEditorMode(_viewModel.Snapshot.MapCanvasToolModeState.CollisionEditModeKey);
         }
 
         private CollisionEditorTool GetSelectedCollisionEditorTool()
         {
-            if (IsToolButtonChecked("tool.vertex"))
+            return ToCollisionEditorTool(_viewModel.Snapshot.MapCanvasToolModeState.CollisionToolKey);
+        }
+
+        private static CollisionEditorMode ToCollisionEditorMode(string key)
+        {
+            return string.Equals(key, "tile-set-collision", StringComparison.Ordinal)
+                ? CollisionEditorMode.TileSetCollision
+                : CollisionEditorMode.CollisionLayout;
+        }
+
+        private static CollisionEditorTool ToCollisionEditorTool(string key)
+        {
+            if (string.Equals(key, "vertex", StringComparison.Ordinal))
                 return CollisionEditorTool.Vertex;
-            if (IsToolButtonChecked("tool.move"))
+            if (string.Equals(key, "move", StringComparison.Ordinal))
                 return CollisionEditorTool.Move;
-            if (IsToolButtonChecked("tool.rotate"))
+            if (string.Equals(key, "rotate", StringComparison.Ordinal))
                 return CollisionEditorTool.Rotate;
-            if (IsToolButtonChecked("tool.scale"))
+            if (string.Equals(key, "scale", StringComparison.Ordinal))
                 return CollisionEditorTool.Scale;
-            if (IsToolButtonChecked("tool.addSquareCollision"))
+            if (string.Equals(key, "add-box", StringComparison.Ordinal))
                 return CollisionEditorTool.AddBox;
-            if (IsToolButtonChecked("tool.removeCollision"))
+            if (string.Equals(key, "remove", StringComparison.Ordinal))
                 return CollisionEditorTool.Remove;
 
             return CollisionEditorTool.Select;
+        }
+
+        private string GetSelectedViewModeKey()
+        {
+            var combo = FindToolStripItem(mapTools.Items, "viewModeCombo") as ToolStripComboBox;
+            return combo != null && combo.SelectedIndex == 1 ? "collision" : "map";
+        }
+
+        private string GetSelectedCollisionEditModeKey()
+        {
+            var combo = FindToolStripItem(mapTools.Items, "collisionEditModeCombo") as ToolStripComboBox;
+            return combo != null && combo.SelectedIndex == 0 ? "tile" : "layout";
+        }
+
+        private string GetSelectedCollisionToolKey()
+        {
+            if (IsToolButtonChecked("tool.vertex"))
+                return "vertex";
+            if (IsToolButtonChecked("tool.move"))
+                return "move";
+            if (IsToolButtonChecked("tool.rotate"))
+                return "rotate";
+            if (IsToolButtonChecked("tool.scale"))
+                return "scale";
+            if (IsToolButtonChecked("tool.addSquareCollision"))
+                return "add-box";
+            if (IsToolButtonChecked("tool.removeCollision"))
+                return "remove";
+
+            return "select";
         }
 
         private static string GetCollisionToolButtonName(CollisionEditorTool tool)
@@ -2212,11 +2509,9 @@ namespace MapEditorTool.UI
             if (selected == null)
                 return;
 
-            var combo = FindToolStripItem(mapTools.Items, "collisionModeCombo") as ToolStripComboBox;
-            if (combo == null)
-                return;
-
-            var mode = combo.SelectedIndex == 1 ? CollisionMode.ForegroundTexture : CollisionMode.TileForeground;
+            var mode = string.Equals(_viewModel.Snapshot.MapCanvasToolModeState.CollisionModeKey, "foreground-texture", StringComparison.Ordinal)
+                ? CollisionMode.ForegroundTexture
+                : CollisionMode.TileForeground;
             if (selected.CollisionUsed == mode)
                 return;
 
@@ -2275,8 +2570,7 @@ namespace MapEditorTool.UI
 
         private bool IsCollisionViewSelected()
         {
-            var combo = FindToolStripItem(mapTools.Items, "viewModeCombo") as ToolStripComboBox;
-            return combo != null && combo.SelectedIndex == 1;
+            return string.Equals(_viewModel.Snapshot.MapCanvasToolModeState.ViewModeKey, "collision", StringComparison.Ordinal);
         }
 
         private void SetCollisionOverlay(MapEditorTool.Executor.MapCreation.CollisionLayoutData layout, CollisionLayoutTarget target, bool visible)
@@ -2307,8 +2601,7 @@ namespace MapEditorTool.UI
 
         private CollisionLayoutTarget GetSelectedCollisionLayoutTarget()
         {
-            var combo = FindToolStripItem(mapTools.Items, "collisionTargetCombo") as ToolStripComboBox;
-            if (combo != null && combo.SelectedIndex == 1)
+            if (string.Equals(_viewModel.Snapshot.MapCanvasToolModeState.CollisionTargetKey, "foreground-texture", StringComparison.Ordinal))
                 return CollisionLayoutTarget.ForegroundTexture;
 
             return CollisionLayoutTarget.Tile;
@@ -2908,9 +3201,12 @@ namespace MapEditorTool.UI
                 ReplaceItems(linksList, snapshot.LinkNames, snapshot.SelectedLinkIndex);
                 mapPropertyGrid.SelectedObject = _viewModel.SelectedMap ?? (object)snapshot.MapState;
                 linkPropertyGrid.SelectedObject = _viewModel.SelectedLink ?? (object)snapshot.LinkState;
+                ApplyMapToolSnapshot(snapshot);
                 _mapPreviewCanvas.SetData(_viewModel.SelectedMap, TryResolveGodotRootForPreview());
                 _mapPreviewCanvas.SetCollisionOverlay(_currentCollisionOverlay, _currentCollisionOverlayTarget, _showCollisionOverlay);
-                _mapPreviewCanvas.SetCollisionEditorState(GetSelectedCollisionEditorMode(), GetSelectedCollisionEditorTool());
+                _mapPreviewCanvas.SetCollisionEditorState(
+                    ToCollisionEditorMode(snapshot.MapCanvasToolModeState.CollisionEditModeKey),
+                    ToCollisionEditorTool(snapshot.MapCanvasToolModeState.CollisionToolKey));
                 _linksPreviewCanvas.SetData(_viewModel.CurrentProject, _viewModel.SelectedMap, _viewModel.SelectedLink);
                 ApplyUndoStateToMenu();
                 statusText.Text = snapshot.StatusText;
@@ -2921,6 +3217,22 @@ namespace MapEditorTool.UI
             }
         }
 
+        private void ApplyMapToolSnapshot(MapEditorUiSnapshot snapshot)
+        {
+            if (snapshot == null || snapshot.MapCanvasToolModeState == null)
+                return;
+
+            SetToolStripComboSelectedIndex(
+                mapTools,
+                "viewModeCombo",
+                string.Equals(snapshot.MapCanvasToolModeState.ViewModeKey, "collision", StringComparison.Ordinal) ? 1 : 0);
+            SetToolStripComboSelectedIndex(
+                mapTools,
+                "collisionEditModeCombo",
+                string.Equals(snapshot.MapCanvasToolModeState.CollisionEditStyleKey, "tile", StringComparison.Ordinal) ? 0 : 1);
+            ApplyCollisionToolButtonSelection(FindToolStripItem(mapTools.Items, GetCollisionToolButtonName(ToCollisionEditorTool(snapshot.MapCanvasToolModeState.CollisionToolKey))));
+        }
+
         private static void ReplaceItems(ListBox listBox, string[] items)
         {
             ReplaceItems(listBox, items, listBox.SelectedIndex);
@@ -2928,6 +3240,12 @@ namespace MapEditorTool.UI
 
         private static void ReplaceItems(ListBox listBox, string[] items, int selectedIndex)
         {
+            if (ListBoxItemsEqual(listBox, items))
+            {
+                SetListBoxSelectedIndex(listBox, selectedIndex);
+                return;
+            }
+
             listBox.BeginUpdate();
             try
             {
@@ -2935,15 +3253,37 @@ namespace MapEditorTool.UI
                 if (items != null && items.Length > 0)
                     listBox.Items.AddRange(items);
 
-                if (selectedIndex >= 0 && selectedIndex < listBox.Items.Count)
-                    listBox.SelectedIndex = selectedIndex;
-                else if (listBox.Items.Count == 0)
-                    listBox.SelectedIndex = -1;
+                SetListBoxSelectedIndex(listBox, selectedIndex);
             }
             finally
             {
                 listBox.EndUpdate();
             }
+        }
+
+        private static bool ListBoxItemsEqual(ListBox listBox, string[] items)
+        {
+            var itemCount = items == null ? 0 : items.Length;
+            if (listBox.Items.Count != itemCount)
+                return false;
+
+            for (var i = 0; i < itemCount; i++)
+            {
+                var current = listBox.Items[i] == null ? string.Empty : listBox.Items[i].ToString();
+                if (!string.Equals(current, items[i] ?? string.Empty, StringComparison.Ordinal))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static void SetListBoxSelectedIndex(ListBox listBox, int selectedIndex)
+        {
+            var targetIndex = selectedIndex >= 0 && selectedIndex < listBox.Items.Count
+                ? selectedIndex
+                : -1;
+            if (listBox.SelectedIndex != targetIndex)
+                listBox.SelectedIndex = targetIndex;
         }
 
         private void ApplyUndoStateToMenu()
@@ -2968,7 +3308,9 @@ namespace MapEditorTool.UI
             if (_isApplyingSnapshot)
                 return;
 
-            _viewModel.SelectMapByIndex(mapsList.SelectedIndex);
+            _viewModel.SubmitMapSelectionChanged(
+                UiSignalFactory.SelectionChanged(DescribeSource(sender), e == null ? "SelectionChanged" : e.GetType().Name, mapsList.SelectedIndex));
+            ConsumeDeveloperCommentRequest();
             ClearCollisionOverlay();
             RefreshCollisionOverlayFromToolbar(false);
             ApplySnapshotToUi();
@@ -3006,7 +3348,9 @@ namespace MapEditorTool.UI
             if (_isApplyingSnapshot)
                 return;
 
-            _viewModel.SelectLinkByIndex(linksList.SelectedIndex);
+            _viewModel.SubmitLinkSelectionChanged(
+                UiSignalFactory.SelectionChanged(DescribeSource(sender), e == null ? "SelectionChanged" : e.GetType().Name, linksList.SelectedIndex));
+            ConsumeDeveloperCommentRequest();
             ApplySnapshotToUi();
         }
 

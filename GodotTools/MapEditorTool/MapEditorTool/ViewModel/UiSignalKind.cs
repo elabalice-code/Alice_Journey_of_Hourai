@@ -4,6 +4,8 @@ namespace MapEditorTool.ViewModel
     {
         Unknown = 0,
         Click = 1,
-        CheckedChanged = 2
+        CheckedChanged = 2,
+        SelectionChanged = 3,
+        ValueChanged = 4
     }
 }

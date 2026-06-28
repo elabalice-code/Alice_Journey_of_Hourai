@@ -5,6 +5,7 @@ using System.Text;
 
 namespace MapEditorTool.Executor
 {
+    // DeveloperCommentExecutor is the terminal mailbox writer. Do not inline or remove this side effect from UI/ViewModel/SignalWeaver.
     public sealed class DeveloperCommentExecutor
     {
         private readonly string _commentLogPath;

@@ -740,13 +740,18 @@ namespace MapEditorTool.UI
 
         private bool BeginTileCollisionVertexDrag(Point location)
         {
-            var primary = GetPrimaryTileCollisionSelection();
-            if (_collisionEditorTool != CollisionEditorTool.Vertex || primary == null)
+            if (_collisionEditorTool != CollisionEditorTool.Vertex)
                 return false;
 
+            var primary = GetPrimaryTileCollisionSelection();
             int vertexIndex;
-            if (!HitTestSelectedTileCollisionVertex(location, out vertexIndex))
-                return false;
+            if (primary == null || !HitTestSelectedTileCollisionVertex(location, out vertexIndex))
+            {
+                if (!HitTestTileCollisionVertex(location, out primary, out vertexIndex))
+                    return false;
+
+                SetSingleTileCollisionSelection(primary);
+            }
 
             _tileCollisionVertexDragging = true;
             _tileCollisionDragVertexIndex = vertexIndex;
@@ -799,6 +804,71 @@ namespace MapEditorTool.UI
                 {
                     vertexIndex = i;
                     return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool HitTestTileCollisionVertex(Point location, out TileCollisionSelection selection, out int vertexIndex)
+        {
+            selection = null;
+            vertexIndex = -1;
+            if (_map == null || _map.TileLayers == null || string.IsNullOrWhiteSpace(_godotRoot))
+                return false;
+
+            var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
+            var roomPixelHeight = Math.Max(1, _map.RoomHeight) * TileSize;
+            var bounds = ComputeRoomBounds(roomPixelWidth, roomPixelHeight);
+            var scale = bounds.Width / roomPixelWidth;
+            var radius = Math.Max(6f, 7f * scale);
+            var radiusSquared = radius * radius;
+
+            foreach (var layer in _map.TileLayers.OrderByDescending(layer => layer.ZIndex).ThenByDescending(layer => layer.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (layer == null || !layer.Visible || layer.Cells == null || layer.Cells.Count == 0 || string.IsNullOrWhiteSpace(layer.TileSetPath))
+                    continue;
+
+                var tileSet = TryLoadTileSet(layer.TileSetPath);
+                if (tileSet == null)
+                    continue;
+
+                foreach (var cell in layer.Cells)
+                {
+                    GodotTileAtlasSource source;
+                    if (!tileSet.Sources.TryGetValue(cell.SourceId, out source))
+                        continue;
+
+                    GodotTilePhysicsPolygon polygon;
+                    if (!source.PhysicsPolygons.TryGetValue(BuildTilePhysicsPolygonKey(cell.AtlasX, cell.AtlasY, cell.Alternative), out polygon))
+                        continue;
+                    if (polygon.Points == null || polygon.Points.Count < 3)
+                        continue;
+
+                    var existing = FindTileCollisionSelection(layer.NodePath, cell.X, cell.Y, cell.Alternative);
+                    var localPoints = existing == null ? polygon.Points : existing.Points;
+                    var points = BuildTileCollisionScreenPoints(cell.X, cell.Y, localPoints, bounds, scale);
+                    for (var i = 0; i < points.Length; i++)
+                    {
+                        var dx = location.X - points[i].X;
+                        var dy = location.Y - points[i].Y;
+                        if (dx * dx + dy * dy > radiusSquared)
+                            continue;
+
+                        selection = existing ?? new TileCollisionSelection(
+                            layer.TileSetPath,
+                            layer.NodePath,
+                            cell.SourceId,
+                            cell.AtlasX,
+                            cell.AtlasY,
+                            cell.X,
+                            cell.Y,
+                            cell.Alternative,
+                            polygon.OneWay,
+                            CloneGodotVectorPoints(polygon.Points));
+                        vertexIndex = i;
+                        return true;
+                    }
                 }
             }
 
@@ -2123,7 +2193,7 @@ namespace MapEditorTool.UI
                 var path = string.IsNullOrWhiteSpace(_map.BackgroundTexturePath)
                     ? _map.TemplateTexturePath
                     : _map.BackgroundTexturePath;
-                DrawTexture(graphics, bounds, roomPixelWidth, roomPixelHeight, path, _map.BackgroundTextureAnchor, _map.BackgroundTextureUpscale, 0.85f);
+                DrawBackgroundTexture(graphics, bounds, path, 0.85f);
             }
 
             if (_map.ForegroundTextureEnabled)
@@ -2163,6 +2233,30 @@ namespace MapEditorTool.UI
                 graphics.DrawImage(
                     image,
                     Rectangle.Round(destination),
+                    0,
+                    0,
+                    image.Width,
+                    image.Height,
+                    GraphicsUnit.Pixel,
+                    attributes);
+            }
+        }
+
+        private void DrawBackgroundTexture(Graphics graphics, RectangleF bounds, string resPath, float opacity)
+        {
+            var image = TryLoadImage(resPath);
+            if (image == null)
+                return;
+
+            // BackgroundLayer/BackgroundTexture is a full-rect TextureRect in-game, so preview it as a filled room backdrop.
+            using (var attributes = new System.Drawing.Imaging.ImageAttributes())
+            {
+                var matrix = new System.Drawing.Imaging.ColorMatrix();
+                matrix.Matrix33 = Math.Max(0f, Math.Min(1f, opacity));
+                attributes.SetColorMatrix(matrix);
+                graphics.DrawImage(
+                    image,
+                    Rectangle.Round(bounds),
                     0,
                     0,
                     image.Width,
@@ -2260,10 +2354,10 @@ namespace MapEditorTool.UI
             var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
             var scale = bounds.Width / roomPixelWidth;
             using (var dim = new SolidBrush(Color.FromArgb(55, 20, 24, 28)))
-            using (var solidPen = new Pen(Color.FromArgb(210, 235, 90, 90), 2f))
+            using (var solidPen = new Pen(Color.FromArgb(230, 235, 70, 70), 2f))
             using (var oneWayPen = new Pen(Color.FromArgb(210, 90, 210, 130), 2f))
-            using (var selectedPen = new Pen(Color.FromArgb(240, 90, 170, 245), 3f))
-            using (var selectedFill = new SolidBrush(Color.FromArgb(72, 90, 170, 245)))
+            using (var selectedPen = new Pen(Color.FromArgb(245, 255, 120, 120), 3f))
+            using (var selectedFill = new SolidBrush(Color.FromArgb(76, 235, 70, 70)))
             using (var handleFill = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
             using (var handlePen = new Pen(Color.FromArgb(220, 35, 40, 48), 1f))
             {
@@ -2298,15 +2392,15 @@ namespace MapEditorTool.UI
                             graphics.FillPolygon(selectedFill, points);
                         graphics.DrawPolygon(selected ? selectedPen : (polygon.OneWay ? oneWayPen : solidPen), points);
 
-                        if (!selected || _collisionEditorTool != CollisionEditorTool.Vertex || selectedCollision != GetPrimaryTileCollisionSelection())
+                        if (_collisionEditorTool != CollisionEditorTool.Vertex)
                             continue;
 
                         var radius = Math.Max(4f, 5f * scale);
                         for (var i = 0; i < points.Length; i++)
                         {
                             var rect = new RectangleF(points[i].X - radius, points[i].Y - radius, radius * 2f, radius * 2f);
-                            graphics.FillEllipse(handleFill, rect);
-                            graphics.DrawEllipse(handlePen, rect);
+                            graphics.FillRectangle(handleFill, rect);
+                            graphics.DrawRectangle(handlePen, rect.X, rect.Y, rect.Width, rect.Height);
                         }
                     }
                 }
@@ -2401,17 +2495,13 @@ namespace MapEditorTool.UI
 
             var roomPixelWidth = Math.Max(1, _map.RoomWidth) * TileSize;
             var scale = bounds.Width / roomPixelWidth;
-            var fillColor = _collisionTarget == CollisionLayoutTarget.ForegroundTexture
-                ? Color.FromArgb(58, 70, 130, 230)
-                : Color.FromArgb(58, 225, 65, 72);
-            var lineColor = _collisionTarget == CollisionLayoutTarget.ForegroundTexture
-                ? Color.FromArgb(170, 50, 95, 220)
-                : Color.FromArgb(170, 190, 35, 45);
+            var fillColor = Color.FromArgb(72, 235, 70, 70);
+            var lineColor = Color.FromArgb(220, 235, 70, 70);
 
             using (var fill = new SolidBrush(fillColor))
             using (var pen = new Pen(lineColor, 2f))
-            using (var selectedFill = new SolidBrush(Color.FromArgb(76, 120, 200, 255)))
-            using (var selectedPen = new Pen(Color.FromArgb(210, 70, 145, 235), 3f))
+            using (var selectedFill = new SolidBrush(Color.FromArgb(86, 255, 120, 120)))
+            using (var selectedPen = new Pen(Color.FromArgb(245, 255, 120, 120), 3f))
             using (var handleBrush = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
             using (var handlePen = new Pen(Color.FromArgb(220, 35, 40, 48), 1f))
             {
@@ -2431,7 +2521,7 @@ namespace MapEditorTool.UI
                     if (points.Length >= 2)
                         graphics.DrawPolygon(selected ? selectedPen : pen, points);
 
-                    if (!selected)
+                    if (!selected && _collisionEditorTool != CollisionEditorTool.Vertex)
                         continue;
 
                     var radius = Math.Max(4f, 5f * scale);
@@ -2442,7 +2532,8 @@ namespace MapEditorTool.UI
                         graphics.DrawEllipse(handlePen, rect);
                     }
 
-                    DrawCollisionPolygonTransformGizmo(graphics, polygon, bounds, scale);
+                    if (selected)
+                        DrawCollisionPolygonTransformGizmo(graphics, polygon, bounds, scale);
                 }
             }
         }

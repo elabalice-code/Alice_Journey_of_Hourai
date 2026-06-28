@@ -91,15 +91,15 @@
       "category": "map",
       "purpose": "Map import, validation, editing support, portal animation extraction, and Godot scene patch helpers.",
       "project": "GodotTools/MapEditorTool/MapEditorTool/MapEditorTool.csproj",
-      "output": "GodotTools/MapEditorTool/ReleasePackage",
+      "output": "GodotTools-Build/MapEditorTool",
       "launch": {
         "kind": "exe-run",
-        "executable": "GodotTools/MapEditorTool/ReleasePackage/MapEditorTool.exe",
+        "executable": "GodotTools-Build/MapEditorTool/MapEditorTool.exe",
         "args": []
       },
       "selfTest": {
         "kind": "exe-run",
-        "executable": "GodotTools/MapEditorTool/ReleasePackage/MapEditorTool.exe",
+        "executable": "GodotTools-Build/MapEditorTool/MapEditorTool.exe",
         "args": [
           "agent-self-test",
           "--godotRoot",
@@ -107,7 +107,7 @@
         ]
       },
       "requiresProjectRoot": true,
-      "notes": "WinForms MapEditorTool package with CLI commands. Build GodotTools/MapEditorTool/Build.bat before launching from ToolHub."
+      "notes": "WinForms MapEditorTool package with CLI commands. Build GodotTools/MapEditorTool/Build.bat before launching from ToolHub; it copies the package into GodotTools-Build/MapEditorTool."
     },
     {
       "id": "resource-config",

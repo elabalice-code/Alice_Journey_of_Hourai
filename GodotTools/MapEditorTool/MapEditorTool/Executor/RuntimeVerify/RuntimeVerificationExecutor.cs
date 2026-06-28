@@ -313,6 +313,16 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("tile_map_data")
                     && text.Contains("DecodeTileMapData"),
                 "MapEditorTool importer reads TileMapLayer tile_set and tile_map_data from map scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-imports-game-map-directory-only", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapImport/GodotMapImporter.cs",
+                text => text.Contains("ResolveMapRootDirectory")
+                    && text.Contains("\"CoreEngine\", \"Maps\"")
+                    && text.Contains("Do not scan BuildLogs"),
+                "MapEditorTool default import shows game maps from CoreEngine/Maps instead of BuildLogs or tool-generated verification scenes.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-preview-fills-background-texturerect", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("DrawBackgroundTexture")
+                    && text.Contains("full-rect TextureRect")
+                    && text.Contains("Rectangle.Round(bounds)"),
+                "MapEditorTool preview fills BackgroundLayer/BackgroundTexture like the in-game TextureRect backdrop.");
             AddTextCheck(checks, godotRoot, "mapeditortool-cli-executor-entrypoints", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
                 text => text.Contains("RunStatus")
                     && text.Contains("RunPortalReview")
@@ -333,13 +343,32 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("CliEntry.Run(args)")
                     && text.Contains("Application.Run(new Form1())"),
                 "MapEditorTool program entry dispatches command-line invocations to CLI and otherwise launches the WinForms UI.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-program-registers-global-crash-logs", "GodotTools/MapEditorTool/MapEditorTool/Program.cs",
+                text => text.Contains("Application.ThreadException")
+                    && text.Contains("AppDomain.CurrentDomain.UnhandledException")
+                    && text.Contains("Application.SetUnhandledExceptionMode")
+                    && text.Contains("CrashLogExecutor"),
+                "MapEditorTool program registers global UI-thread and AppDomain crash logging before starting the WinForms UI.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-crash-log-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/CrashLogExecutor.cs",
+                text => text.Contains("logs")
+                    && text.Contains("crash.log")
+                    && text.Contains("WriteCrash")
+                    && text.Contains("File.AppendAllText"),
+                "MapEditorTool crash log executor writes unexpected crash details to logs/crash.log.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-auto-imports-on-startup", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("Shown += Form1Shown")
+                    && text.Contains("AutoImportMapsOnStartup")
+                    && text.Contains("ImportCurrentGodotProject")
+                    && text.Contains("LoadImportedProject")
+                    && text.Contains("Startup import skipped"),
+                "MapEditorTool UI automatically imports existing Godot map data on first launch while reporting startup import failures in status text.");
             AddTextCheck(checks, godotRoot, "toolhub-map-editor-routes-to-mapeditor-tool-package", "GodotTools/tools.json",
                 text => text.Contains("\"id\": \"map-editor\"")
                     && text.Contains("\"name\": \"MapEditorTool\"")
                     && text.Contains("\"project\": \"GodotTools/MapEditorTool/MapEditorTool/MapEditorTool.csproj\"")
                     && text.Contains("\"kind\": \"exe-run\"")
-                    && text.Contains("\"executable\": \"GodotTools/MapEditorTool/ReleasePackage/MapEditorTool.exe\"")
-                    && text.Contains("\"output\": \"GodotTools/MapEditorTool/ReleasePackage\""),
+                    && text.Contains("\"executable\": \"GodotTools-Build/MapEditorTool/MapEditorTool.exe\"")
+                    && text.Contains("\"output\": \"GodotTools-Build/MapEditorTool\""),
                 "ToolHub manifest keeps the historical map-editor id routed to the packaged MapEditorTool executable.");
             AddTextCheck(checks, godotRoot, "toolhub-supports-packaged-exe-run-tools", "GodotTools/ToolHub/ToolHub/Program.cs",
                 text => text.Contains("BuildToolInvocation")
@@ -412,9 +441,11 @@ namespace MapEditorTool.Executor.RuntimeVerify
                 "MapEditorTool portal animation resolves bundled video tools from MapEditorTool first, with legacy MapEditor as a compatibility fallback.");
             AddTextCheck(checks, godotRoot, "mapeditortool-build-packages-video-tools", "GodotTools/MapEditorTool/Build.bat",
                 text => text.Contains("LEGACY_MAPEDITOR_DIR")
+                    && text.Contains("GodotTools-Build\\MapEditorTool")
+                    && text.Contains("taskkill /f /im MapEditorTool.exe")
                     && text.Contains("ffmpeg.exe ffprobe.exe ffplay.exe")
                     && text.Contains("Copied: %%F"),
-                "MapEditorTool build packages ffmpeg, ffprobe, and ffplay into ReleasePackage for independent portal animation execution.");
+                "MapEditorTool build closes stale tool instances and packages ffmpeg, ffprobe, and ffplay into GodotTools-Build/MapEditorTool for independent portal animation execution.");
             AddTextCheck(checks, godotRoot, "mapeditortool-cli-ux-audit", "GodotTools/MapEditorTool/MapEditorTool/Cli/CliEntry.cs",
                 text => text.Contains("case \"ux-audit\"")
                     && text.Contains("RunUxAudit")
@@ -489,6 +520,24 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("OpenCommentLog")
                     && text.Contains("menu.developer.openLog"),
                 "MapEditorTool UI can open the developer comment log through an executor.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-developer-comment-mailbox-preserved", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("ConsumeDeveloperCommentRequest")
+                    && text.Contains("DeveloperComment is the always-available developer mailbox")
+                    && text.Contains("SetDeveloperCommentStatus")
+                    && text.Contains("Developer comment logged"),
+                "MapEditorTool preserves the DeveloperComment mailbox notification path after UI signals are consumed.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-routes-developer-comment-for-specialized-signals", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("MapEditorSignalWeaverHost")
+                    && text.Contains("MapEditorSignalRoute.UiClick")
+                    && text.Contains("MapEditorSignalRoute.MapSelection")
+                    && text.Contains("MapEditorSignalRoute.MapCanvasToolMode"),
+                "MapEditorTool routes click, selection, and value-change producer signals through the central SignalWeaver host.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-featuror-preserves-developer-comment-crosscut", "GodotTools/MapEditorTool/MapEditorTool/SignalWeaver/Featuror/FeaturorEditor.cs",
+                text => text.Contains("ConsumeDeveloperCommentForSpecializedSignal")
+                    && text.Contains("DeveloperComment is the developer mailbox")
+                    && text.Contains("machines.DeveloperComment.ConsumeUiClick")
+                    && text.Contains("MapEditorSignalRoute.MapCanvasToolMode"),
+                "MapEditorTool Featuror dispatcher keeps DeveloperComment wired into specialized signal routes.");
             AddTextCheck(checks, godotRoot, "mapeditortool-resource-path-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ResourcePath/ResourcePathExecutor.cs",
                 text => text.Contains("ConvertToProjectResourcePath")
                     && text.Contains("EnsurePreferredProjectResourceDirectory")
@@ -602,15 +651,38 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("SetCollisionOverlay")
                     && text.Contains("ApplyCollisionModeSelectionToMap")
                     && text.Contains("viewModeCombo")
-                    && text.Contains("collisionTargetCombo"),
-                "MapEditorTool toolbar can drive collision overlay loading and active collision mode selection.");
+                    && !text.Contains("collisionTargetCombo")
+                    && !text.Contains("collisionModeCombo")
+                    && !text.Contains("collisionModeLabel"),
+                "MapEditorTool toolbar can drive collision overlay loading while redundant active, collision mode, and collision target UI stays removed.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-drives-collision-editor-state", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
-                text => text.Contains("UpdateCollisionEditorState")
-                    && text.Contains("GetSelectedCollisionEditorMode")
-                    && text.Contains("GetSelectedCollisionEditorTool")
+                text => text.Contains("SubmitMapCanvasToolModeChanged")
+                    && text.Contains("MapCanvasToolModeState")
+                    && text.Contains("ToCollisionEditorMode")
+                    && text.Contains("ToCollisionEditorTool")
                     && text.Contains("ApplyCollisionToolButtonSelection")
                     && text.Contains("SetCollisionEditorState"),
-                "MapEditorTool toolbar drives collision editor mode/tool state into the map preview canvas.");
+                "MapEditorTool toolbar drives collision editor mode/tool state through MapCanvasToolMode snapshot state into the map preview canvas.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-ui-defaults-to-tile-vertex-collision-editing", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("collisionEditMode.Items.AddRange(new object[] { \"Tile\", \"SVG\" })")
+                    && text.Contains("collisionEditMode.SelectedIndex = 0")
+                    && text.Contains("vertexTool.Checked = true")
+                    && text.Contains("ApplyMapToolSnapshot"),
+                "MapEditorTool collision toolbar defaults to Tile vertex editing while keeping SVG outline editing selectable.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-collision-edit-signal-merges-redundant-mode-ui", "GodotTools/MapEditorTool/MapEditorTool/SignalWeaver/Featuror/MapEditor/MapCanvas/ToolMode/MapCanvasToolModeSignalMachine.cs",
+                text => text.Contains("NormalizeCollisionEditStyleKey")
+                    && text.Contains("ToCollisionEditorModeKey")
+                    && text.Contains("ToCollisionModeKey")
+                    && text.Contains("ToCollisionTargetKey")
+                    && text.Contains("CollisionEditStyleKey"),
+                "MapCanvasToolMode state machine merges the retained Tile/SVG edit signal into concrete canvas mode, collision mode, and target facts.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-signal-defaults-to-tile-vertex-collision-editing", "GodotTools/MapEditorTool/MapEditorTool/SignalWeaver/Featuror/MapEditor/MapCanvas/ToolMode/MapCanvasToolModeSignalState.cs",
+                text => text.Contains("CollisionEditStyleKey = \"tile\"")
+                    && text.Contains("CollisionEditModeKey = \"tile-set-collision\"")
+                    && text.Contains("CollisionModeKey = \"tile-foreground\"")
+                    && text.Contains("CollisionToolKey = \"vertex\"")
+                    && text.Contains("CollisionTargetKey = \"tile\""),
+                "MapCanvasToolMode state defaults to Tile vertex collision editing instead of SVG/foreground layout editing.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-collision-editor-state", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("CollisionEditorMode")
                     && text.Contains("CollisionEditorTool")
@@ -625,14 +697,33 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("BuildTilePhysicsPolygonKey")
                     && text.Contains("BuildTileCollisionScreenPoints"),
                 "MapEditorTool map preview can draw and select TileSet collision polygons for imported tile layers.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-tileset-collision-key-shape", "GodotTools/MapEditorTool/MapEditorTool/Executor/TileCollision/GodotTileSetLoader.cs",
+                text => text.Contains("BuildPhysicsKey")
+                    && text.Contains("X:Y/alternative")
+                    && text.Contains("atlasX + \":\" + atlasY + \"/\" + alternative"),
+                "MapEditorTool TileSet loader stores physics polygons with the same X:Y/alternative key shape consumed by the preview canvas.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-preview-consumes-tileset-collision-key-shape", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("BuildTilePhysicsPolygonKey")
+                    && text.Contains("atlasY.ToString(System.Globalization.CultureInfo.InvariantCulture) +")
+                    && text.Contains("\"/\" +")
+                    && text.Contains("alternative.ToString(System.Globalization.CultureInfo.InvariantCulture)"),
+                "MapEditorTool preview consumes TileSet physics polygons with the same X:Y/alternative key shape produced by the loader.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-tileset-collision-vertex-drag", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("BeginTileCollisionVertexDrag")
                     && text.Contains("ApplyTileCollisionVertexDrag")
+                    && text.Contains("HitTestTileCollisionVertex")
                     && text.Contains("HitTestSelectedTileCollisionVertex")
                     && text.Contains("TileCollisionEditCommitted")
                     && text.Contains("WorldToTileLocal")
                     && text.Contains("EvictTileSetCacheForResPath"),
                 "MapEditorTool map preview can drag selected TileSet collision vertices and publish commit requests.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-collision-vertex-handles-visible", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
+                text => text.Contains("_collisionEditorTool != CollisionEditorTool.Vertex")
+                    && text.Contains("graphics.FillRectangle(handleFill")
+                    && text.Contains("graphics.FillEllipse(handleBrush")
+                    && text.Contains("SetSingleTileCollisionSelection(primary)")
+                    && text.Contains("if (!selected && _collisionEditorTool != CollisionEditorTool.Vertex)"),
+                "MapEditorTool collision Vertex mode shows draggable Tile and SVG/layout handles without requiring a separate pre-selection click.");
             AddTextCheck(checks, godotRoot, "mapeditortool-map-preview-tileset-collision-add-remove", "GodotTools/MapEditorTool/MapEditorTool/UI/MapPreviewCanvas.cs",
                 text => text.Contains("TileCollisionAddBoxRequested")
                     && text.Contains("TileCollisionRemoveRequested")
@@ -661,10 +752,10 @@ namespace MapEditorTool.Executor.RuntimeVerify
                 text => text.Contains("CollisionToolShortcutRequested += MapPreviewCanvasCollisionToolShortcutRequested")
                     && text.Contains("MapPreviewCanvasCollisionToolShortcutRequested")
                     && text.Contains("GetCollisionToolButtonName")
-                    && text.Contains("GetCollisionToolDisplayName")
+                    && text.Contains("SubmitMapCanvasToolModeChanged")
                     && text.Contains("ApplyCollisionToolButtonSelection")
-                    && text.Contains("Collision tool selected"),
-                "MapEditorTool UI consumes collision tool shortcut requests and updates toolbar/editor state.");
+                    && text.Contains("CollisionToolShortcutRequested"),
+                "MapEditorTool UI consumes collision tool shortcut requests and updates toolbar/editor state through MapCanvasToolMode.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-consumes-tileset-collision-selection", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("MapPreviewCanvasTileCollisionSelected")
                     && text.Contains("TileCollisionSelected")
@@ -834,9 +925,9 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("SetPortalLinkTarget")
                     && text.Contains("RestoreLinkForPortal")
                     && text.Contains("ApplyPortalPropertyChange")
-                    && text.Contains("SelectMapById")
-                    && text.Contains("SelectLink(e.Link)"),
-                "MapEditorTool UI consumes links preview navigation and portal target events, writes portal targets through the executor, and rolls back model state on write failure.");
+                    && text.Contains("SubmitMapGraphMapSelectionById")
+                    && text.Contains("SubmitMapGraphLinkSelection"),
+                "MapEditorTool UI consumes links preview navigation through MapGraphSelection, writes portal targets through the executor, and rolls back model state on write failure.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-portal-target-undo-redo", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("PortalTargetUndoAction")
                     && text.Contains("PushPortalTargetUndo")
@@ -864,10 +955,12 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("OutputDirectoryResPath"),
                 "MapEditorTool PortalAnimationExecutor exposes the non-interactive portal animation frame extractor used by CLI.");
             AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-link-navigation-state", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
-                text => text.Contains("SelectMapById")
-                    && text.Contains("SelectLink(MapLink link)")
-                    && text.Contains("ReferenceEquals(item, link)"),
-                "MapEditorTool ViewModel exposes pure selection methods for links preview navigation.");
+                text => text.Contains("SubmitMapSelectionById")
+                    && text.Contains("SubmitLinkSelectionByKey")
+                    && text.Contains("MapEditorSignalRoute.MapSelectionById")
+                    && text.Contains("MapEditorSignalRoute.LinkSelectionByKey")
+                    && text.Contains("BuildLinkKey"),
+                "MapEditorTool ViewModel exposes pure MapGraphSelection signal methods for links preview navigation.");
             AddTextCheck(checks, godotRoot, "mapeditortool-ui-manual-link-editing", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
                 text => text.Contains("context.links.add")
                     && text.Contains("context.links.delete")
@@ -876,6 +969,12 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("NormalizeMapId(fromMap)")
                     && text.Contains("RemoveSelectedLink"),
                 "MapEditorTool UI can manually add and delete project links from the links list context menu.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-mapproject-mutation-signal-path", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("MapEditorSignalWeaverHost")
+                    && text.Contains("ConsumeMapProjectMutationRequest")
+                    && text.Contains("ApplyMapProjectMutationDecision")
+                    && text.Contains("MapProjectMutationKind"),
+                "MapEditorTool routes map/link add, delete, and pin intents through a MapProjectMutation SignalWeaver feature before terminal execution.");
             AddTextCheck(checks, godotRoot, "mapeditortool-viewmodel-manual-link-editing", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
                 text => text.Contains("AddLink(MapLink link)")
                     && text.Contains("RemoveSelectedLink")
@@ -910,9 +1009,36 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("PropertyGridSelectedGridItemChanged")
                     && text.Contains("ShowPropertyGridToolTip"),
                 "MapEditorTool UI shows map/link list hover details and property grid selected-item help.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-list-selection-ux", "GodotTools/MapEditorTool/MapEditorTool/UI/Form1.cs",
+                text => text.Contains("ListBoxItemsEqual")
+                    && text.Contains("SetListBoxSelectedIndex")
+                    && text.Contains("ReferenceEquals(sender, mapsList)")
+                    && text.Contains("ReplaceItems(mapsList"),
+                "MapEditorTool keeps map list selection stable by avoiding unnecessary ListBox rebuilds during selection refresh.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-map-list-shows-short-names", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("private string FormatMapName")
+                    && text.Contains("Path.GetFileNameWithoutExtension")
+                    && !text.Contains("map.DisplayName + \"  [\" + map.ScenePath + \"]\""),
+                "MapEditorTool map list shows concise map names while full scene paths remain available through hover details and property grids.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-link-list-shows-short-names", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("private string FormatLinkName")
+                    && text.Contains("private string FormatMapReferenceName")
+                    && text.Contains("Path.GetFileNameWithoutExtension")
+                    && text.Contains(".Select(FormatLinkName)"),
+                "MapEditorTool link list shows concise map names while full link endpoint paths remain available through hover details and property grids.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-links-preview-shows-edit-hint", "GodotTools/MapEditorTool/MapEditorTool/UI/LinksPreviewCanvas.cs",
+                text => text.Contains("Left-click map/link to select")
+                    && text.Contains("Right-click a map to edit portal targets"),
+                "MapEditorTool links preview explains its selection and portal-target editing gestures in the canvas legend.");
             AddTextCheck(checks, godotRoot, "mapeditortool-project-file-executor", "GodotTools/MapEditorTool/MapEditorTool/Executor/ProjectFile/ProjectFileExecutor.cs",
                 text => text.Contains("LoadProject") && text.Contains("SaveProject"),
                 "MapEditorTool project file executor can load and save MapProject JSON.");
+            AddTextCheck(checks, godotRoot, "mapeditortool-persistence-action-signal-path", "GodotTools/MapEditorTool/MapEditorTool/ViewModel/MapEditorShellViewModel.cs",
+                text => text.Contains("MapEditorSignalWeaverHost")
+                    && text.Contains("ConsumePersistenceActionRequest")
+                    && text.Contains("ApplyPersistenceActionDecision")
+                    && text.Contains("PersistenceActionState"),
+                "MapEditorTool routes file/project persistence action intents through a SignalWeaver feature before UI terminal execution.");
             AddTextCheck(checks, godotRoot, "mapeditortool-mapproject-removes-link-identities", "GodotTools/MapEditorTool/MapEditorTool/Models/MapProject.cs",
                 text => text.Contains("RemoveMapById")
                     && text.Contains("AddMapIdentity")

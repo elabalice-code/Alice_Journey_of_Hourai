@@ -4,6 +4,7 @@ using System.Windows.Forms;
 
 namespace MapEditorTool.UI
 {
+    // This dialog is the developer mailbox UI. Do not remove it when simplifying regular user workflows.
     public sealed class DeveloperCommentBox : Form
     {
         private readonly TextBox _commentBox;
@@ -52,7 +53,7 @@ namespace MapEditorTool.UI
 
             var ok = new Button
             {
-                Text = "确认",
+                Text = "OK",
                 Left = 426,
                 Top = 258,
                 Width = 86,
@@ -61,7 +62,7 @@ namespace MapEditorTool.UI
 
             var cancel = new Button
             {
-                Text = "取消",
+                Text = "Cancel",
                 Left = 522,
                 Top = 258,
                 Width = 86,

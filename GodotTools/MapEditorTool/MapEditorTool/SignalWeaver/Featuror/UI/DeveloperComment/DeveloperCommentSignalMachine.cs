@@ -2,6 +2,7 @@ using MapEditorTool.ViewModel;
 
 namespace MapEditorTool.SignalWeaver.Featuror.UI.DeveloperComment
 {
+    // DeveloperComment is the signal-layer mailbox trigger. It must stay UI-free but must keep emitting OpenCommentBox intent.
     public sealed class DeveloperCommentSignalMachine
     {
         private readonly DeveloperCommentSignalState _state = new DeveloperCommentSignalState();

@@ -249,7 +249,8 @@ namespace MapEditorTool.UI
 
         private void DrawLegend(Graphics graphics)
         {
-            var text = "Maps: " + _nodes.Count + "   Links: " + _edges.Count;
+            var text = "Maps: " + _nodes.Count + "   Links: " + _edges.Count +
+                "   Left-click map/link to select. Right-click a map to edit portal targets.";
             using (var brush = new SolidBrush(Color.FromArgb(210, 220, 230)))
                 graphics.DrawString(text, Font, brush, 10f, 8f);
         }

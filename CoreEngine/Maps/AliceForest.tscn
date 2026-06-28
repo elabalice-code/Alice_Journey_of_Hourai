@@ -53,6 +53,6 @@ target_area = &"story_vertical"
 target_entry_node = &"Portal_1"
 
 [node name="Portal_1" parent="." instance=ExtResource("3_portal")]
-position = Vector2(0, 0)
+position = Vector2(17.166, 12.016)
 target_map = ""
 target_area = &""

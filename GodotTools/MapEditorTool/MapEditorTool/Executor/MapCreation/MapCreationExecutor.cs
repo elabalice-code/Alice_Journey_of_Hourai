@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.Serialization.Json;
 using System.Text;
+using System.Text.Json;
 using MapEditorTool.Models;
 
 namespace MapEditorTool.Executor.MapCreation
@@ -184,11 +184,8 @@ namespace MapEditorTool.Executor.MapCreation
             if (!overwrite && File.Exists(filePath))
                 return false;
 
-            using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None))
-            {
-                var serializer = new DataContractJsonSerializer(typeof(CollisionLayoutData));
-                serializer.WriteObject(stream, layout);
-            }
+            var json = JsonSerializer.Serialize(layout, CollisionLayoutJson.Options);
+            File.WriteAllText(filePath, json);
 
             return true;
         }

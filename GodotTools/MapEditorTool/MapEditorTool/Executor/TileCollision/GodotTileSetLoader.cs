@@ -286,7 +286,8 @@ namespace MapEditorTool.Executor.TileCollision
 
         private static string BuildPhysicsKey(string atlasX, string atlasY, string alternative)
         {
-            return atlasX + ":" + atlasY + ":" + alternative;
+            // Keep this in the same X:Y/alternative shape used by Godot .tres atlas physics lines and MapPreviewCanvas.
+            return atlasX + ":" + atlasY + "/" + alternative;
         }
 
         private static List<GodotVector2> ParsePackedVector2Array(string raw)

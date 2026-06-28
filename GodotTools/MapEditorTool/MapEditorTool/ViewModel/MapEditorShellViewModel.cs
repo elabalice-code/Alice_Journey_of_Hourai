@@ -1,8 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using MapEditorTool.Models;
+using MapEditorTool.SignalWeaver.Main;
+using MapEditorTool.SignalWeaver.Featuror.MapEditor.MapCanvas.ToolMode;
+using MapEditorTool.SignalWeaver.Featuror.MapEditor.MapGraph.Selection;
+using MapEditorTool.SignalWeaver.Featuror.MapEditor.MapProject.Mutation;
+using MapEditorTool.SignalWeaver.Featuror.Persistence.Action;
 using MapEditorTool.SignalWeaver.Featuror.UI.DeveloperComment;
+using MapEditorTool.SignalWeaver.Featuror.UI.TerminalAction;
 
 namespace MapEditorTool.ViewModel
 {
@@ -11,7 +18,7 @@ namespace MapEditorTool.ViewModel
     public sealed class MapEditorShellViewModel
     {
         private readonly List<UiSignal> _producerSignals = new List<UiSignal>();
-        private readonly DeveloperCommentSignalMachine _developerCommentMachine = new DeveloperCommentSignalMachine();
+        private readonly MapEditorSignalWeaverHost _signalWeaverHost = new MapEditorSignalWeaverHost();
         private readonly MapEditorUiSnapshot _snapshot;
         private MapProject _currentProject;
         private int _selectedMapIndex;
@@ -27,7 +34,12 @@ namespace MapEditorTool.ViewModel
                 LinkNames = new string[0],
                 MapState = new MapShellState(),
                 LinkState = new LinkShellState(),
-                DeveloperCommentState = _developerCommentMachine.State
+                DeveloperCommentState = _signalWeaverHost.States.DeveloperComment,
+                TerminalActionState = _signalWeaverHost.States.TerminalAction,
+                MapGraphSelectionState = _signalWeaverHost.States.MapGraphSelection,
+                MapCanvasToolModeState = _signalWeaverHost.States.MapCanvasToolMode,
+                MapProjectMutationState = _signalWeaverHost.States.MapProjectMutation,
+                PersistenceActionState = _signalWeaverHost.States.PersistenceAction
             };
             _currentProject = new MapProject();
         }
@@ -99,32 +111,87 @@ namespace MapEditorTool.ViewModel
 
         public void SubmitSignal(UiSignal signal)
         {
-            SubmitSignal(signal, null);
+            SubmitSignal(signal, new MapEditorSignalDecisions());
+        }
+
+        public void SubmitUiClick(UiSignal signal)
+        {
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.UiClick, signal);
+            SubmitSignal(signal, frame.Decisions);
         }
 
         public DeveloperCommentSignalDecision SubmitDeveloperCommentClick(UiSignal signal)
         {
-            var decision = _developerCommentMachine.ConsumeUiClick(signal);
-            SubmitSignal(signal, decision);
-            return decision;
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.DeveloperCommentClick, signal);
+            SubmitSignal(signal, frame.Decisions);
+            return frame.Decisions.DeveloperComment;
         }
 
-        private void SubmitSignal(UiSignal signal, DeveloperCommentSignalDecision developerCommentDecision)
+        public TerminalActionSignalDecision SubmitTerminalActionClick(UiSignal signal)
+        {
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.TerminalActionClick, signal);
+            SubmitSignal(signal, frame.Decisions);
+            return frame.Decisions.TerminalAction;
+        }
+
+        public MapGraphSelectionSignalDecision SubmitMapSelectionChanged(UiSignal signal)
+        {
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.MapSelection, signal);
+            SubmitSignal(signal, frame.Decisions);
+            return frame.Decisions.MapGraphSelection;
+        }
+
+        public MapGraphSelectionSignalDecision SubmitMapSelectionById(UiSignal signal)
+        {
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.MapSelectionById, signal);
+            SubmitSignal(signal, frame.Decisions);
+            return frame.Decisions.MapGraphSelection;
+        }
+
+        public MapGraphSelectionSignalDecision SubmitLinkSelectionChanged(UiSignal signal)
+        {
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.LinkSelection, signal);
+            SubmitSignal(signal, frame.Decisions);
+            return frame.Decisions.MapGraphSelection;
+        }
+
+        public MapGraphSelectionSignalDecision SubmitLinkSelectionByKey(UiSignal signal)
+        {
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.LinkSelectionByKey, signal);
+            SubmitSignal(signal, frame.Decisions);
+            return frame.Decisions.MapGraphSelection;
+        }
+
+        public MapCanvasToolModeSignalDecision SubmitMapCanvasToolModeChanged(UiSignal signal)
+        {
+            var frame = _signalWeaverHost.Submit(MapEditorSignalRoute.MapCanvasToolMode, signal);
+            SubmitSignal(signal, frame.Decisions);
+            return frame.Decisions.MapCanvasToolMode;
+        }
+
+        private void SubmitSignal(UiSignal signal, MapEditorSignalDecisions decisions)
         {
             if (signal == null)
                 return;
+
+            decisions = decisions ?? new MapEditorSignalDecisions();
 
             _producerSignals.Add(signal);
             _snapshot.SignalCount = _producerSignals.Count;
             _snapshot.LastSignalSummary = signal.ToSummary();
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
-            ApplyDeveloperCommentDecision(developerCommentDecision);
+            ApplyDeveloperCommentDecision(decisions.DeveloperComment);
+            ApplyTerminalActionDecision(decisions.TerminalAction);
+            ApplyMapGraphSelectionDecision(decisions.MapGraphSelection);
+            ApplyMapCanvasToolModeDecision(decisions.MapCanvasToolMode);
+            ApplyMapProjectMutationDecision(decisions.MapProjectMutation);
+            ApplyPersistenceActionDecision(decisions.PersistenceAction);
         }
 
         public void SetDeveloperCommentMode(bool enabled, UiSignal signal)
         {
-            var decision = _developerCommentMachine.SetMode(enabled, signal);
-            SubmitSignal(signal, decision);
+            var frame = _signalWeaverHost.SetDeveloperCommentMode(enabled, signal);
+            SubmitSignal(signal, frame.Decisions);
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
@@ -132,6 +199,32 @@ namespace MapEditorTool.ViewModel
         {
             _snapshot.DeveloperCommentOpenRequested = false;
             _snapshot.DeveloperCommentRequestSource = string.Empty;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void ConsumeTerminalActionRequest()
+        {
+            _snapshot.TerminalActionRequested = false;
+            _snapshot.TerminalActionKey = string.Empty;
+            _snapshot.TerminalActionRequestSource = string.Empty;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void ConsumePersistenceActionRequest()
+        {
+            _snapshot.PersistenceActionRequested = false;
+            _snapshot.PersistenceActionKind = PersistenceActionKind.None;
+            _snapshot.PersistenceActionKey = string.Empty;
+            _snapshot.PersistenceActionRequestSource = string.Empty;
+            _snapshot.LastUpdatedAt = DateTimeOffset.Now;
+        }
+
+        public void ConsumeMapProjectMutationRequest()
+        {
+            _snapshot.MapProjectMutationRequested = false;
+            _snapshot.MapProjectMutationKind = MapProjectMutationKind.None;
+            _snapshot.MapProjectMutationActionKey = string.Empty;
+            _snapshot.MapProjectMutationRequestSource = string.Empty;
             _snapshot.LastUpdatedAt = DateTimeOffset.Now;
         }
 
@@ -349,7 +442,7 @@ namespace MapEditorTool.ViewModel
                 .ToArray();
 
             _snapshot.LinkNames = _currentProject.Links
-                .Select(link => link.DisplayName)
+                .Select(FormatLinkName)
                 .ToArray();
 
             _snapshot.SelectedMapIndex = _selectedMapIndex;
@@ -378,7 +471,7 @@ namespace MapEditorTool.ViewModel
 
         private void ApplyDeveloperCommentDecision(DeveloperCommentSignalDecision decision)
         {
-            _snapshot.DeveloperCommentState = _developerCommentMachine.State;
+            _snapshot.DeveloperCommentState = _signalWeaverHost.States.DeveloperComment;
             _snapshot.DeveloperCommentModeEnabled = _snapshot.DeveloperCommentState.ModeEnabled;
 
             if (decision == null)
@@ -390,16 +483,139 @@ namespace MapEditorTool.ViewModel
             _snapshot.StatusText = decision.StatusText;
         }
 
+        private void ApplyTerminalActionDecision(TerminalActionSignalDecision decision)
+        {
+            _snapshot.TerminalActionState = _signalWeaverHost.States.TerminalAction;
+
+            if (decision == null)
+                return;
+
+            _snapshot.TerminalActionRequested = decision.ExecuteAction;
+            _snapshot.TerminalActionSourceSignalConsumed = decision.SourceSignalConsumed;
+            _snapshot.TerminalActionKey = decision.ActionKey;
+            _snapshot.TerminalActionRequestSource = decision.SourceDescription;
+            if (decision.ExecuteAction)
+                _snapshot.StatusText = decision.StatusText;
+        }
+
+        private void ApplyMapGraphSelectionDecision(MapGraphSelectionSignalDecision decision)
+        {
+            _snapshot.MapGraphSelectionState = _signalWeaverHost.States.MapGraphSelection;
+
+            if (decision == null || !decision.ApplySelection)
+                return;
+
+            if (decision.Target == MapGraphSelectionTarget.Map)
+            {
+                if (!string.IsNullOrWhiteSpace(decision.SelectedKey))
+                    SelectMapById(decision.SelectedKey);
+                else
+                    SelectMapByIndex(decision.SelectedIndex);
+            }
+            else if (decision.Target == MapGraphSelectionTarget.Link)
+            {
+                if (!string.IsNullOrWhiteSpace(decision.SelectedKey))
+                    SelectLinkByKey(decision.SelectedKey);
+                else
+                    SelectLinkByIndex(decision.SelectedIndex);
+            }
+        }
+
+        private void ApplyMapCanvasToolModeDecision(MapCanvasToolModeSignalDecision decision)
+        {
+            _snapshot.MapCanvasToolModeState = _signalWeaverHost.States.MapCanvasToolMode;
+
+            if (decision == null || !decision.ApplyToolMode)
+                return;
+
+            _snapshot.StatusText = decision.StatusText;
+        }
+
+        private void ApplyPersistenceActionDecision(PersistenceActionSignalDecision decision)
+        {
+            _snapshot.PersistenceActionState = _signalWeaverHost.States.PersistenceAction;
+
+            if (decision == null)
+                return;
+
+            _snapshot.PersistenceActionRequested = decision.RequestAction;
+            _snapshot.PersistenceActionSourceSignalConsumed = decision.SourceSignalConsumed;
+            _snapshot.PersistenceActionKind = decision.ActionKind;
+            _snapshot.PersistenceActionKey = decision.ActionKey;
+            _snapshot.PersistenceActionRequestSource = decision.SourceDescription;
+        }
+
+        private void ApplyMapProjectMutationDecision(MapProjectMutationSignalDecision decision)
+        {
+            _snapshot.MapProjectMutationState = _signalWeaverHost.States.MapProjectMutation;
+
+            if (decision == null)
+                return;
+
+            _snapshot.MapProjectMutationRequested = decision.RequestMutation;
+            _snapshot.MapProjectMutationSourceSignalConsumed = decision.SourceSignalConsumed;
+            _snapshot.MapProjectMutationKind = decision.MutationKind;
+            _snapshot.MapProjectMutationActionKey = decision.ActionKey;
+            _snapshot.MapProjectMutationRequestSource = decision.SourceDescription;
+        }
+
+        private void SelectLinkByKey(string linkKey)
+        {
+            if (_currentProject == null || _currentProject.Links == null)
+                return;
+
+            var index = _currentProject.Links.FindIndex(link =>
+                string.Equals(BuildLinkKey(link), linkKey, StringComparison.Ordinal));
+            if (index >= 0)
+                SelectLinkByIndex(index);
+        }
+
+        public static string BuildLinkKey(MapLink link)
+        {
+            if (link == null || link.From == null)
+                return string.Empty;
+
+            return (link.From.MapId ?? string.Empty).Trim() + "|" + (link.From.PortalId ?? string.Empty).Trim();
+        }
+
         private string FormatMapName(MapDefinition map)
         {
             if (map == null)
                 return string.Empty;
 
             var name = !string.IsNullOrWhiteSpace(map.DisplayName)
-                ? map.DisplayName + "  [" + map.ScenePath + "]"
-                : map.ScenePath;
+                ? map.DisplayName.Trim()
+                : Path.GetFileNameWithoutExtension(NormalizeResPath(map.ScenePath));
+            if (string.IsNullOrWhiteSpace(name))
+                name = NormalizeResPath(map.ScenePath);
 
             return IsPinnedStartingMap(map) ? "[Pinned] " + name : name;
+        }
+
+        private string FormatLinkName(MapLink link)
+        {
+            if (link == null)
+                return string.Empty;
+
+            return FormatMapReferenceName(link.From == null ? string.Empty : link.From.MapId) +
+                " -> " +
+                FormatMapReferenceName(link.To == null ? string.Empty : link.To.MapId);
+        }
+
+        private string FormatMapReferenceName(string mapId)
+        {
+            var normalized = NormalizeResPath(mapId);
+            if (_currentProject != null && _currentProject.Maps != null)
+            {
+                var map = _currentProject.Maps.FirstOrDefault(candidate =>
+                    string.Equals(NormalizeResPath(candidate == null ? string.Empty : candidate.Id), normalized, StringComparison.Ordinal) ||
+                    string.Equals(NormalizeResPath(candidate == null ? string.Empty : candidate.ScenePath), normalized, StringComparison.Ordinal));
+                if (map != null && !string.IsNullOrWhiteSpace(map.DisplayName))
+                    return map.DisplayName.Trim();
+            }
+
+            var fileName = Path.GetFileNameWithoutExtension(normalized);
+            return string.IsNullOrWhiteSpace(fileName) ? normalized : fileName;
         }
 
         private bool IsPinnedStartingMap(MapDefinition map)

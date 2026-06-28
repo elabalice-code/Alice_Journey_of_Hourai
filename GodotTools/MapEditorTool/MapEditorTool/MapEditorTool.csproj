@@ -12,6 +12,7 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
+    <RuntimeIdentifiers>win</RuntimeIdentifiers>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -48,10 +49,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="9.0.7">
+      <PrivateAssets>none</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="Cli\CliEntry.cs" />
     <Compile Include="Cli\NativeConsole.cs" />
     <Compile Include="Executor\CollisionLayout\CollisionLayoutExecutor.cs" />
     <Compile Include="Executor\CollisionLayout\CollisionLayoutModels.cs" />
+    <Compile Include="Executor\CrashLogExecutor.cs" />
     <Compile Include="Executor\DeveloperCommentExecutor.cs" />
     <Compile Include="Executor\ForegroundTextureCollision\ForegroundTextureCollisionExecutor.cs" />
     <Compile Include="Executor\ForegroundTextureCollision\ForegroundTextureCollisionHelper.cs" />
@@ -89,10 +96,36 @@
     <Compile Include="Executor\TileCollision\TileCollisionSnapshotExecutor.cs" />
     <Compile Include="Executor\TileCollision\TileCollisionSnapshotModels.cs" />
     <Compile Include="Models\MapProject.cs" />
+    <Compile Include="SignalWeaver\Main\CustomizeData.cs" />
+    <Compile Include="SignalWeaver\Main\CustomizeExecutor.cs" />
+    <Compile Include="SignalWeaver\Featuror\FeaturorEditor.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapCanvas\ToolMode\MapCanvasToolModeSignalDecision.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapCanvas\ToolMode\MapCanvasToolModeSignalMachine.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapCanvas\ToolMode\MapCanvasToolModeSignalPhase.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapCanvas\ToolMode\MapCanvasToolModeSignalState.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapGraph\Selection\MapGraphSelectionSignalDecision.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapGraph\Selection\MapGraphSelectionSignalMachine.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapGraph\Selection\MapGraphSelectionSignalPhase.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapGraph\Selection\MapGraphSelectionSignalState.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapGraph\Selection\MapGraphSelectionTarget.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapProject\Mutation\MapProjectMutationKind.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapProject\Mutation\MapProjectMutationSignalDecision.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapProject\Mutation\MapProjectMutationSignalMachine.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapProject\Mutation\MapProjectMutationSignalPhase.cs" />
+    <Compile Include="SignalWeaver\Featuror\MapEditor\MapProject\Mutation\MapProjectMutationSignalState.cs" />
+    <Compile Include="SignalWeaver\Featuror\Persistence\Action\PersistenceActionKind.cs" />
+    <Compile Include="SignalWeaver\Featuror\Persistence\Action\PersistenceActionSignalDecision.cs" />
+    <Compile Include="SignalWeaver\Featuror\Persistence\Action\PersistenceActionSignalMachine.cs" />
+    <Compile Include="SignalWeaver\Featuror\Persistence\Action\PersistenceActionSignalPhase.cs" />
+    <Compile Include="SignalWeaver\Featuror\Persistence\Action\PersistenceActionSignalState.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalDecision.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalMachine.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalPhase.cs" />
     <Compile Include="SignalWeaver\Featuror\UI\DeveloperComment\DeveloperCommentSignalState.cs" />
+    <Compile Include="SignalWeaver\Featuror\UI\TerminalAction\TerminalActionSignalDecision.cs" />
+    <Compile Include="SignalWeaver\Featuror\UI\TerminalAction\TerminalActionSignalMachine.cs" />
+    <Compile Include="SignalWeaver\Featuror\UI\TerminalAction\TerminalActionSignalPhase.cs" />
+    <Compile Include="SignalWeaver\Featuror\UI\TerminalAction\TerminalActionSignalState.cs" />
     <Compile Include="ViewModel\LinkShellState.cs" />
     <Compile Include="ViewModel\MapEditorShellViewModel.cs" />
     <Compile Include="ViewModel\MapEditorUiSnapshot.cs" />

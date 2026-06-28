@@ -17,7 +17,8 @@ namespace MapEditorTool.Executor.MapImport
         public static MapProject ImportFromGodot(string godotRootDir)
         {
             var project = new MapProject();
-            var scenes = EnumerateTscnFiles(godotRootDir)
+            var mapRootDir = ResolveMapRootDirectory(godotRootDir);
+            var scenes = EnumerateTscnFiles(mapRootDir)
                 .Select(p => new SceneFile(p, GetRelativePath(godotRootDir, p).Replace('\\', '/')))
                 .OrderBy(x => x.RelativePath, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
@@ -47,6 +48,13 @@ namespace MapEditorTool.Executor.MapImport
                 project.ResetToDefault();
 
             return project;
+        }
+
+        private static string ResolveMapRootDirectory(string godotRootDir)
+        {
+            // Default UX import must show game maps only. Do not scan BuildLogs or tool-generated verification scenes.
+            var mapRootDir = Path.Combine(godotRootDir ?? string.Empty, "CoreEngine", "Maps");
+            return Directory.Exists(mapRootDir) ? mapRootDir : godotRootDir;
         }
 
         private static MapDefinition BuildMapDefinition(string scenePath, TscnScene tscn)

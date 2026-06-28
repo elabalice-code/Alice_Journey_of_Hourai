@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Runtime.Serialization.Json;
+using System.Text.Json;
 using MapEditorTool.Executor.MapCreation;
 using MapEditorTool.Models;
 
@@ -32,11 +32,8 @@ namespace MapEditorTool.Executor.CollisionLayout
             {
                 try
                 {
-                    using (var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read))
-                    {
-                        var serializer = new DataContractJsonSerializer(typeof(CollisionLayoutData));
-                        layout = serializer.ReadObject(stream) as CollisionLayoutData;
-                    }
+                    var json = File.ReadAllText(filePath);
+                    layout = JsonSerializer.Deserialize<CollisionLayoutData>(json, CollisionLayoutJson.Options);
                 }
                 catch
                 {
@@ -78,11 +75,8 @@ namespace MapEditorTool.Executor.CollisionLayout
             var normalizeResult = NormalizeLayoutInternal(layout, map.RoomWidth, map.RoomHeight);
             var filePath = ToAbsoluteGodotPath(godotRoot, pathResult.ResPath);
             Directory.CreateDirectory(Path.GetDirectoryName(filePath));
-            using (var stream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None))
-            {
-                var serializer = new DataContractJsonSerializer(typeof(CollisionLayoutData));
-                serializer.WriteObject(stream, normalizeResult.Layout);
-            }
+            var json = JsonSerializer.Serialize(normalizeResult.Layout, CollisionLayoutJson.Options);
+            File.WriteAllText(filePath, json);
 
             return new CollisionLayoutFileResult
             {
