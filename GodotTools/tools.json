@@ -87,17 +87,19 @@
     },
     {
       "id": "map-editor",
-      "name": "MapEditor",
+      "name": "MapEditorTool",
       "category": "map",
       "purpose": "Map import, validation, editing support, portal animation extraction, and Godot scene patch helpers.",
-      "project": "GodotTools/MapEditor/MapEditor/MapEditor.csproj",
-      "output": "GodotTools-Build/MapEditor",
+      "project": "GodotTools/MapEditorTool/MapEditorTool/MapEditorTool.csproj",
+      "output": "GodotTools/MapEditorTool/ReleasePackage",
       "launch": {
-        "kind": "dotnet-run",
+        "kind": "exe-run",
+        "executable": "GodotTools/MapEditorTool/ReleasePackage/MapEditorTool.exe",
         "args": []
       },
       "selfTest": {
-        "kind": "dotnet-run",
+        "kind": "exe-run",
+        "executable": "GodotTools/MapEditorTool/ReleasePackage/MapEditorTool.exe",
         "args": [
           "agent-self-test",
           "--godotRoot",
@@ -105,7 +107,7 @@
         ]
       },
       "requiresProjectRoot": true,
-      "notes": "WinForms map tool with CLI commands. Agent validation checks model roundtrip and project-root shape."
+      "notes": "WinForms MapEditorTool package with CLI commands. Build GodotTools/MapEditorTool/Build.bat before launching from ToolHub."
     },
     {
       "id": "resource-config",

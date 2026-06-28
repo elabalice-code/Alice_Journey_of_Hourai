@@ -280,26 +280,34 @@ internal static class Program
             BuildInlineHandoffSection("dump-index", "ToolHub dump index", BuildDumpIndex(root))
         };
 
-        sections.Add(RunCapturedHandoffSection(
+        sections.Add(RunCapturedToolHandoffSection(
             "map-status",
             "MapEditor map status",
-            "dotnet",
-            BuildDotnetToolArgs(root, manifest, "map-editor", ["status"])));
-        sections.Add(RunCapturedHandoffSection(
+            root,
+            manifest,
+            "map-editor",
+            ["status"]));
+        sections.Add(RunCapturedToolHandoffSection(
             "map-portal-review",
             "MapEditor portal review",
-            "dotnet",
-            BuildDotnetToolArgs(root, manifest, "map-editor", ["portal-review"])));
-        sections.Add(RunCapturedHandoffSection(
+            root,
+            manifest,
+            "map-editor",
+            ["portal-review"]));
+        sections.Add(RunCapturedToolHandoffSection(
             "map-runtime-verify",
             "MapEditor runtime verification",
-            "dotnet",
-            BuildDotnetToolArgs(root, manifest, "map-editor", ["runtime-verify"])));
-        sections.Add(RunCapturedHandoffSection(
+            root,
+            manifest,
+            "map-editor",
+            ["runtime-verify"]));
+        sections.Add(RunCapturedToolHandoffSection(
             "map-ux-audit",
             "MapEditor UX audit",
-            "dotnet",
-            BuildDotnetToolArgs(root, manifest, "map-editor", ["ux-audit"])));
+            root,
+            manifest,
+            "map-editor",
+            ["ux-audit"]));
         sections.Add(RunCapturedHandoffSection(
             "resource-status",
             "ResourceConfig workflow status",
@@ -1401,11 +1409,13 @@ internal static class Program
 
     private static MapSceneResourceReviewReport BuildMapSceneResourceReviewReport(string root, ToolManifest manifest, int limit)
     {
-        var portalSection = RunCapturedHandoffSection(
+        var portalSection = RunCapturedToolHandoffSection(
             "map-portal-review",
             "MapEditor portal review",
-            "dotnet",
-            BuildDotnetToolArgs(root, manifest, "map-editor", ["portal-review"]));
+            root,
+            manifest,
+            "map-editor",
+            ["portal-review"]);
 
         var portalCoverageByScene = portalSection.Payload is JsonElement portalReview
             ? ReadPortalCoverageHints(portalReview)
@@ -1901,30 +1911,96 @@ internal static class Program
         };
     }
 
+    private static ToolHandoffSection RunCapturedToolHandoffSection(
+        string id,
+        string title,
+        string root,
+        ToolManifest manifest,
+        string toolId,
+        IReadOnlyList<string> toolArgs)
+    {
+        var invocation = BuildToolInvocation(root, manifest, toolId, toolArgs);
+        return RunCapturedHandoffSection(id, title, invocation.FileName, invocation.Args);
+    }
+
     private static List<string> BuildDotnetToolArgs(string root, ToolManifest manifest, string toolId, IReadOnlyList<string> toolArgs)
+    {
+        var invocation = BuildToolInvocation(root, manifest, toolId, toolArgs);
+        if (!invocation.FileName.Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"{toolId} is configured for {invocation.FileName}, not dotnet.");
+        }
+        return invocation.Args.ToList();
+    }
+
+    private static ToolInvocation BuildToolInvocation(string root, ToolManifest manifest, string toolId, IReadOnlyList<string> toolArgs)
     {
         var tool = manifest.Tools.FirstOrDefault(x => x.Id.Equals(toolId, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException("tool not found: " + toolId);
-        var projectPath = ResolveRootedPath(root, tool.Project);
-        if (!File.Exists(projectPath))
+        return BuildToolInvocation(root, manifest, tool, tool.Launch, toolArgs, includeCommandArgs: false, appendGodotRoot: true);
+    }
+
+    private static ToolInvocation BuildToolInvocation(
+        string root,
+        ToolManifest manifest,
+        ToolEntry tool,
+        ToolCommand? command,
+        IReadOnlyList<string> extraArgs,
+        bool includeCommandArgs,
+        bool appendGodotRoot)
+    {
+        if (command == null)
         {
-            throw new FileNotFoundException($"tool project not found: {tool.Project}", projectPath);
+            throw new InvalidOperationException($"tool command not found: {tool.Id}");
         }
 
-        var dotnetArgs = new List<string>
+        var commandArgs = includeCommandArgs
+            ? command.Args.Select(x => ExpandToken(x, root, manifest)).ToList()
+            : new List<string>();
+        commandArgs.AddRange(extraArgs);
+        if (appendGodotRoot && !HasOption(commandArgs, "godotRoot") && !HasOption(commandArgs, "godot-root"))
         {
-            "run",
-            "--project",
-            projectPath,
-            "-c",
-            "Release",
-            "--no-build",
-            "--"
-        };
-        dotnetArgs.AddRange(toolArgs);
-        dotnetArgs.Add("--godotRoot");
-        dotnetArgs.Add(root);
-        return dotnetArgs;
+            commandArgs.Add("--godotRoot");
+            commandArgs.Add(root);
+        }
+
+        if (command.Kind.Equals("dotnet-run", StringComparison.OrdinalIgnoreCase))
+        {
+            var projectPath = ResolveRootedPath(root, tool.Project);
+            if (!File.Exists(projectPath))
+            {
+                throw new FileNotFoundException($"tool project not found: {tool.Project}", projectPath);
+            }
+
+            var dotnetArgs = new List<string>
+            {
+                "run",
+                "--project",
+                projectPath,
+                "-c",
+                "Release",
+                "--no-build",
+                "--"
+            };
+            dotnetArgs.AddRange(commandArgs);
+            return new ToolInvocation("dotnet", dotnetArgs);
+        }
+
+        if (command.Kind.Equals("exe-run", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(command.Executable))
+            {
+                throw new InvalidOperationException($"{tool.Id}: executable is required for exe-run.");
+            }
+            var executablePath = ResolveCommandExecutablePath(root, manifest, command.Executable);
+            if (!File.Exists(executablePath))
+            {
+                throw new FileNotFoundException($"tool executable not found: {command.Executable}", executablePath);
+            }
+            return new ToolInvocation(executablePath, commandArgs);
+        }
+
+        throw new InvalidOperationException($"unsupported command kind for {tool.Id}: {command.Kind}");
     }
 
     private static ToolHubStatus BuildStatus(string root, ToolManifest manifest)
@@ -2119,34 +2195,19 @@ internal static class Program
             Console.Error.WriteLine($"tool command not found: {tool.Id} {commandName}");
             return 1;
         }
-        if (!command.Kind.Equals("dotnet-run", StringComparison.OrdinalIgnoreCase))
+        ToolInvocation invocation;
+        try
         {
-            Console.Error.WriteLine($"unsupported command kind for {tool.Id}: {command.Kind}");
+            invocation = BuildToolInvocation(root, manifest, tool, command, [], includeCommandArgs: true, appendGodotRoot: false);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || ex is FileNotFoundException)
+        {
+            Console.Error.WriteLine(ex.Message);
             return 1;
         }
 
-        var projectPath = ResolveRootedPath(root, tool.Project);
-        if (!File.Exists(projectPath))
-        {
-            Console.Error.WriteLine($"tool project not found: {tool.Project}");
-            return 1;
-        }
-
-        var toolArgs = command.Args.Select(x => ExpandToken(x, root, manifest)).ToArray();
-        var dotnetArgs = new List<string>
-        {
-            "run",
-            "--project",
-            projectPath,
-            "-c",
-            "Release",
-            "--no-build",
-            "--"
-        };
-        dotnetArgs.AddRange(toolArgs);
-
-        Console.WriteLine("dotnet " + string.Join(" ", dotnetArgs.Select(QuoteIfNeeded)));
-        return RunProcess("dotnet", dotnetArgs);
+        Console.WriteLine(invocation.FileName + " " + string.Join(" ", invocation.Args.Select(QuoteIfNeeded)));
+        return RunProcess(invocation.FileName, invocation.Args);
     }
 
     private static int RunAllToolCommands(string root, ToolManifest manifest, string[] args)
@@ -2328,29 +2389,19 @@ internal static class Program
             return 1;
         }
 
-        var projectPath = ResolveRootedPath(root, tool.Project);
-        if (!File.Exists(projectPath))
+        ToolInvocation invocation;
+        try
         {
-            Console.Error.WriteLine($"tool project not found: {tool.Project}");
+            invocation = BuildToolInvocation(root, manifest, tool, tool.Launch, mapArgs, includeCommandArgs: false, appendGodotRoot: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException || ex is FileNotFoundException)
+        {
+            Console.Error.WriteLine(ex.Message);
             return 1;
         }
 
-        var dotnetArgs = new List<string>
-        {
-            "run",
-            "--project",
-            projectPath,
-            "-c",
-            "Release",
-            "--no-build",
-            "--"
-        };
-        dotnetArgs.AddRange(mapArgs);
-        dotnetArgs.Add("--godotRoot");
-        dotnetArgs.Add(root);
-
-        Console.WriteLine("dotnet " + string.Join(" ", dotnetArgs.Select(QuoteIfNeeded)));
-        return RunProcess("dotnet", dotnetArgs);
+        Console.WriteLine(invocation.FileName + " " + string.Join(" ", invocation.Args.Select(QuoteIfNeeded)));
+        return RunProcess(invocation.FileName, invocation.Args);
     }
 
     private static int RunResourceConfigCommand(string root, ToolManifest manifest, string[] resourceArgs)
@@ -2405,8 +2456,10 @@ internal static class Program
     {
         var temp = Path.Combine(Path.GetTempPath(), "ToolHub.AgentSelfTest." + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path.Combine(temp, "GodotTools", "Demo", "Demo"));
+        Directory.CreateDirectory(Path.Combine(temp, "GodotTools", "Packaged"));
         File.WriteAllText(Path.Combine(temp, "project.godot"), "[application]\nconfig/name=\"ToolHubSelfTest\"\n");
         File.WriteAllText(Path.Combine(temp, "GodotTools", "Demo", "Demo", "Demo.csproj"), "<Project Sdk=\"Microsoft.NET.Sdk\" />\n");
+        File.WriteAllText(Path.Combine(temp, "GodotTools", "Packaged", "PackagedTool.exe"), "");
         File.WriteAllText(Path.Combine(temp, "GodotTools", "tools.json"), """
         {
           "version": 1,
@@ -2424,6 +2477,18 @@ internal static class Program
               "selfTest": { "kind": "dotnet-run", "args": ["--agent-self-test"] },
               "requiresProjectRoot": false,
               "notes": "ToolHub self-test fixture."
+            },
+            {
+              "id": "packaged",
+              "name": "Packaged",
+              "category": "utility",
+              "purpose": "Self-test packaged executable tool.",
+              "project": "GodotTools/Demo/Demo/Demo.csproj",
+              "output": "GodotTools/Packaged",
+              "launch": { "kind": "exe-run", "executable": "GodotTools/Packaged/PackagedTool.exe", "args": [] },
+              "selfTest": { "kind": "exe-run", "executable": "GodotTools/Packaged/PackagedTool.exe", "args": ["--agent-self-test"] },
+              "requiresProjectRoot": false,
+              "notes": "ToolHub packaged executable self-test fixture."
             }
           ]
         }
@@ -2431,15 +2496,15 @@ internal static class Program
 
         var manifest = LoadManifest(temp);
         var issues = ValidateManifest(temp, manifest);
-        if (manifest.Tools.Count != 1 || issues.Count != 0)
+        if (manifest.Tools.Count != 2 || issues.Count != 0)
         {
             Console.Error.WriteLine("ToolHub agent self-test failed manifest validation.");
             return 1;
         }
         var status = BuildStatus(temp, manifest);
-        if (status.ToolCount != 1 ||
+        if (status.ToolCount != 2 ||
             status.ManifestIssueCount != 0 ||
-            status.CategoryCounts.GetValueOrDefault("utility") != 1 ||
+            status.CategoryCounts.GetValueOrDefault("utility") != 2 ||
             !status.ToolsRootExists ||
             status.Tools[0].Id != "demo" ||
             !status.Tools[0].ProjectExists)
@@ -2481,6 +2546,13 @@ internal static class Program
             Console.Error.WriteLine("ToolHub agent self-test failed command expansion.");
             return 1;
         }
+        var packagedInvocation = BuildToolInvocation(temp, manifest, "packaged", ["status"]);
+        if (!packagedInvocation.FileName.EndsWith(Path.Combine("GodotTools", "Packaged", "PackagedTool.exe"), StringComparison.OrdinalIgnoreCase) ||
+            !packagedInvocation.Args.SequenceEqual(["status", "--godotRoot", temp]))
+        {
+            Console.Error.WriteLine("ToolHub agent self-test failed exe-run invocation construction.");
+            return 1;
+        }
 
         var opts = ParseOptions(["--godot-root", temp]);
         if (GetOption(opts, "godotRoot", "godot-root") != temp)
@@ -2516,51 +2588,52 @@ internal static class Program
             Console.Error.WriteLine("ToolHub agent self-test failed dump index summary formatting.");
             return 1;
         }
+        var summarySections = new List<ToolHandoffSection>
+        {
+            BuildInlineHandoffSection("toolhub-status", "ToolHub status", status),
+            BuildInlineHandoffSection("dump-index", "ToolHub dump index", new
+            {
+                artifactCount = 14,
+                existingCount = 13,
+                missingRequiredCount = 0,
+                canonicalCount = 2,
+                reviewCount = 7
+            }),
+            BuildInlineHandoffSection("map-portal-review", "MapEditor portal review", new
+            {
+                mapsWithoutPortalsCount = 2,
+                portalsWithMissingTargetsCount = 0
+            }),
+            BuildInlineHandoffSection("map-runtime-verify", "MapEditor runtime verification", new
+            {
+                ok = true,
+                issueCount = 0,
+                resolvedPortalTargetCount = 16,
+                portalTargetCount = 16,
+                resolvedEntryRoomCount = 6,
+                entryRoomCount = 6,
+                checkCount = 9
+            }),
+            BuildInlineHandoffSection("map-ux-audit", "MapEditor UX audit", new
+            {
+                ok = true,
+                blockingIssueCount = 0,
+                warningCount = 0,
+                checkCount = 17
+            })
+        };
         var summary = FormatHandoffSummary(new ToolHandoffReport
         {
             ProjectRoot = temp,
             GeneratedAtUtc = "2000-01-01T00:00:00.0000000Z",
-            SectionCount = 2,
+            SectionCount = summarySections.Count,
             FailedSectionCount = 0,
             Ok = true,
-            Sections =
-            [
-                BuildInlineHandoffSection("toolhub-status", "ToolHub status", status),
-                BuildInlineHandoffSection("dump-index", "ToolHub dump index", new
-                {
-                    artifactCount = 14,
-                    existingCount = 13,
-                    missingRequiredCount = 0,
-                    canonicalCount = 2,
-                    reviewCount = 7
-                }),
-                BuildInlineHandoffSection("map-portal-review", "MapEditor portal review", new
-                {
-                    mapsWithoutPortalsCount = 2,
-                    portalsWithMissingTargetsCount = 0
-                }),
-                BuildInlineHandoffSection("map-runtime-verify", "MapEditor runtime verification", new
-                {
-                    ok = true,
-                    issueCount = 0,
-                    resolvedPortalTargetCount = 16,
-                    portalTargetCount = 16,
-                    resolvedEntryRoomCount = 6,
-                    entryRoomCount = 6,
-                    checkCount = 9
-                }),
-                BuildInlineHandoffSection("map-ux-audit", "MapEditor UX audit", new
-                {
-                    ok = true,
-                    blockingIssueCount = 0,
-                    warningCount = 0,
-                    checkCount = 17
-                })
-            ]
+            Sections = summarySections
         });
         if (!summary.Contains("ToolHub handoff summary", StringComparison.Ordinal) ||
             !summary.Contains("Overall: OK", StringComparison.Ordinal) ||
-            !summary.Contains("ToolHub: tools=1 manifestIssues=0", StringComparison.Ordinal) ||
+            !summary.Contains("ToolHub: tools=2 manifestIssues=0", StringComparison.Ordinal) ||
             !summary.Contains("DumpIndex: artifacts=14 existing=13 requiredMissing=0 canonical=2 review=7", StringComparison.Ordinal) ||
             !summary.Contains("PortalReview: mapsWithoutPortals=2 portalsWithMissingTargets=0", StringComparison.Ordinal) ||
             !summary.Contains("RuntimeVerify: ok=true issues=0 portalTargets=16/16 entryRooms=6/6 checks=9", StringComparison.Ordinal) ||
@@ -2884,9 +2957,9 @@ internal static class Program
             {
                 issues.Add($"{tool.Id}: project is required.");
             }
-            else if (!IsSafeRelativePath(tool.Project) || !tool.Project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            else if (!IsSafeRelativePath(tool.Project))
             {
-                issues.Add($"{tool.Id}: project must be a safe relative .csproj path: {tool.Project}");
+                issues.Add($"{tool.Id}: project must be a safe relative path: {tool.Project}");
             }
             else if (!File.Exists(ResolveRootedPath(root, tool.Project)))
             {
@@ -2900,14 +2973,14 @@ internal static class Program
             {
                 issues.Add($"{tool.Id}: output must be a safe relative path: {tool.Output}");
             }
-            ValidateCommand(issues, tool, "launch", tool.Launch, required: false);
+            ValidateCommand(root, manifest, issues, tool, "launch", tool.Launch, required: false);
             if (tool.SelfTest == null)
             {
                 issues.Add($"{tool.Id}: selfTest is required.");
             }
             else
             {
-                ValidateCommand(issues, tool, "selfTest", tool.SelfTest, required: true);
+                ValidateCommand(root, manifest, issues, tool, "selfTest", tool.SelfTest, required: true);
             }
             if (tool.RequiresProjectRoot && !CommandUsesProjectRoot(tool.Launch) && !CommandUsesProjectRoot(tool.SelfTest))
             {
@@ -2922,7 +2995,7 @@ internal static class Program
         return issues;
     }
 
-    private static void ValidateCommand(List<string> issues, ToolEntry tool, string label, ToolCommand? command, bool required)
+    private static void ValidateCommand(string root, ToolManifest manifest, List<string> issues, ToolEntry tool, string label, ToolCommand? command, bool required)
     {
         if (command == null)
         {
@@ -2933,7 +3006,43 @@ internal static class Program
             return;
         }
 
-        if (!command.Kind.Equals("dotnet-run", StringComparison.OrdinalIgnoreCase))
+        if (command.Kind.Equals("dotnet-run", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!tool.Project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+            {
+                issues.Add($"{tool.Id}: project must be a .csproj path for {label} dotnet-run: {tool.Project}");
+            }
+        }
+        else if (command.Kind.Equals("exe-run", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(command.Executable))
+            {
+                issues.Add($"{tool.Id}: {label} executable is required for exe-run.");
+            }
+            else
+            {
+                var executableTokenIssues = FindUnknownTokens(command.Executable).ToArray();
+                foreach (var tokenIssue in executableTokenIssues)
+                {
+                    issues.Add($"{tool.Id}: {label} executable uses unknown token: {tokenIssue}");
+                }
+                if (executableTokenIssues.Length > 0)
+                {
+                    return;
+                }
+
+                var executablePath = ResolveCommandExecutablePath(root, manifest, command.Executable);
+                if (!IsPathInsideRoot(root, executablePath))
+                {
+                    issues.Add($"{tool.Id}: {label} executable must resolve inside the project root: {command.Executable}");
+                }
+                else if (!File.Exists(executablePath))
+                {
+                    issues.Add($"{tool.Id}: {label} executable does not exist: {command.Executable}");
+                }
+            }
+        }
+        else
         {
             issues.Add($"{tool.Id}: unsupported {label} kind: {command.Kind}");
         }
@@ -2985,7 +3094,21 @@ internal static class Program
     }
 
     private static bool CommandUsesProjectRoot(ToolCommand? command) =>
-        command?.Args.Any(x => x.Contains("{projectRoot}", StringComparison.Ordinal)) == true;
+        command?.Args.Any(x => x.Contains("{projectRoot}", StringComparison.Ordinal)) == true ||
+        command?.Executable?.Contains("{projectRoot}", StringComparison.Ordinal) == true;
+
+    private static string ResolveCommandExecutablePath(string root, ToolManifest manifest, string executable)
+    {
+        var expanded = ExpandToken(executable, root, manifest);
+        return ResolveRootedPath(root, expanded);
+    }
+
+    private static bool IsPathInsideRoot(string root, string path)
+    {
+        var rootFullPath = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var pathFullPath = Path.GetFullPath(path);
+        return pathFullPath.StartsWith(rootFullPath, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsKebabId(string value)
     {
@@ -3744,5 +3867,8 @@ public sealed class ToolEntry
 public sealed class ToolCommand
 {
     public string Kind { get; set; } = "";
+    public string Executable { get; set; } = "";
     public List<string> Args { get; set; } = [];
 }
+
+public sealed record ToolInvocation(string FileName, IReadOnlyList<string> Args);

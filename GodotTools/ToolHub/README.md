@@ -137,4 +137,4 @@ The `resource` shortcut is a thin Agent-facing route into ResourceConfig for fre
 
 ## Manifest Validation Scope
 
-`validate-manifest` checks required metadata, supported categories, safe project-relative paths, existing `.csproj` files, `dotnet-run` command kinds, known `{projectRoot}` / `{toolsRoot}` / `{outputRoot}` tokens, and `requiresProjectRoot` command wiring.
+`validate-manifest` checks required metadata, supported categories, safe project-relative paths, existing project files, supported `dotnet-run` / `exe-run` command kinds, packaged executable paths, known `{projectRoot}` / `{toolsRoot}` / `{outputRoot}` tokens, and `requiresProjectRoot` command wiring.
