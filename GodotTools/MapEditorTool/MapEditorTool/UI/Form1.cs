@@ -113,7 +113,7 @@ namespace MapEditorTool.UI
 
         private void BuildMapEditorShell()
         {
-            Text = "MapEditorTool - UI Prototype Shell";
+            Text = "MapEditorTool";
             Width = 1200;
             Height = 800;
             StartPosition = FormStartPosition.CenterScreen;
@@ -121,7 +121,7 @@ namespace MapEditorTool.UI
             BuildMenu();
             BuildMapTools();
             BuildMapList();
-            NormalizePrototypeLabels();
+            NormalizeEditorLabels();
             BuildTabs();
         }
 
@@ -1115,7 +1115,7 @@ namespace MapEditorTool.UI
             }
         }
 
-        private void NormalizePrototypeLabels()
+        private void NormalizeEditorLabels()
         {
             Text = "MapEditorTool";
             mapTab.Text = "Map";
@@ -1225,7 +1225,7 @@ namespace MapEditorTool.UI
             {
                 Name = name,
                 ShortcutKeys = shortcut,
-                ToolTipText = "Prototype shell action: " + text
+                ToolTipText = "MapEditorTool action: " + text
             };
         }
 
@@ -1235,7 +1235,7 @@ namespace MapEditorTool.UI
             {
                 Name = name,
                 CheckOnClick = checkOnClick,
-                ToolTipText = "Prototype shell tool: " + text
+                ToolTipText = "MapEditorTool tool: " + text
             };
             if (checkOnClick)
                 button.CheckedChanged += MapToolSelectionChanged;

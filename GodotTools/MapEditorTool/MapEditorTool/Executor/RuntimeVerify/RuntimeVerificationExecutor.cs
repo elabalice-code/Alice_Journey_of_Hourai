@@ -333,6 +333,22 @@ namespace MapEditorTool.Executor.RuntimeVerify
                     && text.Contains("CliEntry.Run(args)")
                     && text.Contains("Application.Run(new Form1())"),
                 "MapEditorTool program entry dispatches command-line invocations to CLI and otherwise launches the WinForms UI.");
+            AddTextCheck(checks, godotRoot, "toolhub-map-editor-routes-to-mapeditor-tool-package", "GodotTools/tools.json",
+                text => text.Contains("\"id\": \"map-editor\"")
+                    && text.Contains("\"name\": \"MapEditorTool\"")
+                    && text.Contains("\"project\": \"GodotTools/MapEditorTool/MapEditorTool/MapEditorTool.csproj\"")
+                    && text.Contains("\"kind\": \"exe-run\"")
+                    && text.Contains("\"executable\": \"GodotTools/MapEditorTool/ReleasePackage/MapEditorTool.exe\"")
+                    && text.Contains("\"output\": \"GodotTools/MapEditorTool/ReleasePackage\""),
+                "ToolHub manifest keeps the historical map-editor id routed to the packaged MapEditorTool executable.");
+            AddTextCheck(checks, godotRoot, "toolhub-supports-packaged-exe-run-tools", "GodotTools/ToolHub/ToolHub/Program.cs",
+                text => text.Contains("BuildToolInvocation")
+                    && text.Contains("command.Kind.Equals(\"exe-run\"")
+                    && text.Contains("command.Executable")
+                    && text.Contains("ResolveCommandExecutablePath")
+                    && text.Contains("RunCapturedToolHandoffSection")
+                    && text.Contains("ToolHub agent self-test failed exe-run invocation construction"),
+                "ToolHub can dispatch packaged executable tools, so MapEditorTool does not depend on dotnet-run support for its WinForms project type.");
             AddTextCheck(checks, godotRoot, "mapeditortool-writes-texture-transform-metadata", "GodotTools/MapEditorTool/MapEditorTool/Executor/MapTexture/MapTextureExecutor.cs",
                 text => text.Contains("PatchTextureMetadata")
                     && text.Contains("metadata/foreground_texture_anchor")
